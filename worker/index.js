@@ -181,28 +181,7 @@ async function handleScrape(job) {
   const { auditData, contacts } = await runAudit(job.payload.target);
 
   if (!contacts || contacts.length === 0 || !contacts[0].email) {
-    const { data: company } = await supabase.from('companies').insert({
-      name: job.payload.target,
-      website_url: job.payload.target,
-      industry: 'Unknown',
-      lead_score: auditData.score,
-      status: 'REJECTED',
-    }).select().single();
-
-    const { data: audit } = await supabase.from('audits').insert({
-      company_id: company.id,
-      status: 'COMPLETED',
-      total_score: auditData.score
-    }).select().single();
-
-    await supabase.from('audit_results').insert({
-      audit_id: audit.id,
-      category: 'REJECTED',
-      raw_data: auditData,
-      issues_found: { rejection_reason: "No contact email found", issues: auditData.issues }
-    });
-
-    console.log(`✗ ${job.payload.target} | REJECTED: No contact email found.`);
+    console.log(`✗ ${job.payload.target} | SKIPPED: No contact email found.`);
     return;
   }
 
@@ -433,23 +412,60 @@ async function runAudit(url) {
   }
 }
 
-// ─── Contact Extractor ────────────────────────────────────────────────────────
+// ─── Contact Extractor (Deep) ─────────────────────────────────────────────────
 
 async function extractContacts(page) {
   return page.evaluate(() => {
-    const contacts = [];
+    const emails = new Set();
+    const linkedins = new Set();
+    const phones = new Set();
+
+    // 1. Scan full HTML source (catches obfuscated/hidden emails)
+    const html = document.documentElement.innerHTML;
     const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
-    const body = document.body.innerText || '';
-    const emails = [...new Set(body.match(emailRegex) || [])].filter(e =>
-      !e.includes('example') && !e.includes('test@') && !e.endsWith('.png') && !e.endsWith('.jpg')
-    );
-    document.querySelectorAll('a[href^="mailto:"]').forEach(a => {
-      const e = a.href.replace('mailto:', '').split('?')[0].trim();
-      if (e && !emails.includes(e)) emails.push(e);
+    const htmlEmails = html.match(emailRegex) || [];
+    htmlEmails.forEach(e => {
+      const clean = e.toLowerCase().trim();
+      if (
+        !clean.includes('example') && !clean.includes('test@') &&
+        !clean.endsWith('.png') && !clean.endsWith('.jpg') &&
+        !clean.endsWith('.gif') && !clean.endsWith('.svg') &&
+        !clean.includes('sentry') && !clean.includes('schema') &&
+        !clean.includes('@2x') && !clean.includes('noreply') &&
+        !clean.includes('no-reply') && !clean.includes('donotreply') &&
+        !clean.includes('wordpress') && !clean.includes('woocommerce')
+      ) emails.add(clean);
     });
-    const linkedins = [...new Set([...document.querySelectorAll('a[href*="linkedin.com/in/"]')].map(a => a.href))];
-    emails.slice(0, 3).forEach((email, i) => contacts.push({ email, linkedin: linkedins[i] || null }));
-    linkedins.slice(emails.length, emails.length + 2).forEach(linkedin => contacts.push({ email: null, linkedin }));
+
+    // 2. Scan visible body text
+    const body = document.body?.innerText || '';
+    (body.match(emailRegex) || []).forEach(e => emails.add(e.toLowerCase()));
+
+    // 3. All mailto: links
+    document.querySelectorAll('a[href^="mailto:"]').forEach(a => {
+      const e = a.href.replace('mailto:', '').split('?')[0].trim().toLowerCase();
+      if (e) emails.add(e);
+    });
+
+    // 4. tel: links for phone
+    document.querySelectorAll('a[href^="tel:"]').forEach(a => {
+      const p = a.href.replace('tel:', '').trim();
+      if (p) phones.add(p);
+    });
+
+    // 5. LinkedIn profiles
+    document.querySelectorAll('a[href*="linkedin.com/in/"], a[href*="linkedin.com/company/"]').forEach(a => {
+      linkedins.add(a.href);
+    });
+
+    // Build contacts array — email-first
+    const contacts = [];
+    const emailArr = [...emails].slice(0, 5);
+    const linkedinArr = [...linkedins].slice(0, 3);
+
+    emailArr.forEach((email, i) => contacts.push({ email, linkedin: linkedinArr[i] || null }));
+    linkedinArr.slice(emailArr.length).forEach(linkedin => contacts.push({ email: null, linkedin }));
+
     return contacts.slice(0, 5);
   });
 }
