@@ -325,13 +325,13 @@ async function handleProcessReply(job) {
   Reply ONLY with "REJECTED" or "INTERESTED".
   Email: "${body_text}"
   `;
-  const intentCompletion = await groq.chat.completions.create({
+  const completion = await groq.chat.completions.create({
     messages: [{ role: "user", content: intentPrompt }],
-    model: "llama3-8b-8192",
-    temperature: 0.1,
+    model: "llama-3.1-8b-instant",
+    temperature: 0.3,
   });
   
-  const intent = intentCompletion.choices[0]?.message?.content?.trim().toUpperCase();
+  const intent = completion.choices[0]?.message?.content?.trim().toUpperCase();
   
   if (intent.includes("REJECTED")) {
     console.log(`Intent classified as REJECTED. Archiving company...`);
@@ -616,4 +616,40 @@ async function analyzeWithCohere(auditData) {
     }
   }
   return { companyName: auditData.url, pitch: 'All models unavailable.', leadScore: 50 };
+}
+
+// ─── Groq Internal Intelligence ──────────────────────────────────────────────
+
+async function analyzeWithGroq(auditData) {
+  console.log('Generating internal suggestions with Groq (Llama-3)...');
+  const prompt = `
+  You are the lead strategist at Webcord.
+  We just audited a potential client's website: ${auditData.url}
+  Score: ${auditData.score}/100.
+  Issues found: ${auditData.issues?.map(i => i.issue).join(', ')}
+  
+  Write a ruthless, internal-only cheat sheet for ME (the salesperson). 
+  Tell me exactly what is broken on their site and exactly what Webcord service to sell them to fix it.
+  
+  Rules:
+  - DO NOT talk to the client. Talk to ME. (Use "They have", not "You have").
+  - Be blunt, specific, and tactical.
+  - Format as 3-4 bullet points.
+  
+  Example:
+  - They have 14 images missing alt-text. Pitch them our SEO & Accessibility Optimization package to fix their broken search rankings.
+  - Load time is a catastrophic 5.5s because of 38 bloated scripts. Sell them our Speed Optimization service to stop them losing conversions.
+  `;
+  
+  try {
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: "llama-3.1-8b-instant",
+      temperature: 0.3,
+    });
+    return completion.choices[0]?.message?.content?.trim() || "No suggestions generated.";
+  } catch (e) {
+    console.error("Groq Error:", e.message);
+    return "Error generating suggestions.";
+  }
 }
