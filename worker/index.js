@@ -1,5 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-import { Groq } from 'groq-sdk';
+import { CohereClient } from 'cohere-ai';
 import puppeteer from 'puppeteer';
 import dotenv from 'dotenv';
 import ws from 'ws';
@@ -9,12 +8,12 @@ dotenv.config();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
   realtime: { transport: ws }
 });
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
 
 let engineRunning = false;
 let jobProcessing = false;
 const jobQueue = [];
-const JOB_DELAY_MS = 2100; // 2.1s between jobs = ~28 calls/min (safe under Groq free tier 30 RPM)
+const JOB_DELAY_MS = 6000; // 6s between jobs (10 RPM Cohere Trial limit)
 
 console.log('Worker started. Connecting to Supabase...');
 
@@ -173,7 +172,7 @@ async function handleDiscover(job) {
 
 async function handleScrape(job) {
   const { auditData, contacts } = await runAudit(job.payload.target);
-  const aiAnalysis = await analyzeWithGroq(auditData);
+  const aiAnalysis = await analyzeWithCohere(auditData);
 
   const { data: company } = await supabase.from('companies').insert({
     name: aiAnalysis.companyName || job.payload.target,
@@ -350,10 +349,10 @@ async function extractContacts(page) {
   });
 }
 
-// ─── Groq Analysis ──────────────────────────────────────────────────────────
+// ─── Cohere Analysis ────────────────────────────────────────────────────────
 
-async function analyzeWithGroq(auditData) {
-  console.log('Analyzing with Groq (Llama 3)...');
+async function analyzeWithCohere(auditData) {
+  console.log('Analyzing with Cohere (Command R+)...');
   const issuesSummary = auditData.issues?.map(i => `[${i.severity.toUpperCase()}] ${i.category}: ${i.issue}`).join('\n') || 'None';
 
   const prompt = `
@@ -368,43 +367,32 @@ async function analyzeWithGroq(auditData) {
   Issues (${auditData.issues?.length || 0}):
   ${issuesSummary}
   
-  Return JSON with:
+  Return a JSON object with:
   1. "companyName": name from URL/title
   2. "industry": specific industry (e.g. "Plumbing Services" not "Services")
   3. "leadScore": 1-100, lower = worse site = hotter lead
   4. "pitch": cold email max 180 words. Reference 2-3 specific issues. Sign off as "Kenz". No "I noticed your website" or "I hope this finds you well".
-  
-  Respond ONLY with valid JSON. No markdown formatting blocks around it. Just the raw JSON object.
   `;
 
-  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
-  
-  for (const modelName of models) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const completion = await groq.chat.completions.create({
-          messages: [{ role: 'user', content: prompt }],
-          model: modelName,
-          response_format: { type: 'json_object' }
-        });
-        
-        const text = completion.choices[0]?.message?.content || '{}';
-        return JSON.parse(text);
-      } catch (e) {
-        const isRetryable = e.message?.includes('503') || e.message?.includes('429') ||
-          e.message?.includes('rate limit') || e.message?.includes('quota');
-        
-        if (isRetryable && attempt < 3) {
-          const wait = e.message?.includes('429') ? attempt * 5000 : attempt * 2000;
-          console.log(`${modelName} throttled. Waiting ${wait/1000}s...`);
-          await new Promise(r => setTimeout(r, wait));
-        } else if (isRetryable) {
-          console.log(`${modelName} exhausted. Trying next model...`);
-          break;
-        } else {
-          console.error(`Groq error:`, e.message);
-          return { companyName: auditData.url, pitch: 'AI analysis failed.', leadScore: 50 };
-        }
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await cohere.chat({
+        message: prompt,
+        model: 'command-r-plus',
+        responseFormat: { type: 'json_object' }
+      });
+      
+      return JSON.parse(response.text);
+    } catch (e) {
+      const isRetryable = e.message?.includes('429') || e.message?.includes('rate limit');
+      
+      if (isRetryable && attempt < 3) {
+        const wait = attempt * 15000; // wait 15s, 30s on rate limits
+        console.log(`Cohere throttled (429). Waiting ${wait/1000}s...`);
+        await new Promise(r => setTimeout(r, wait));
+      } else {
+        console.error(`Cohere error:`, e.message);
+        return { companyName: auditData.url, pitch: 'AI analysis failed.', leadScore: 50 };
       }
     }
   }
