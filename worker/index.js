@@ -136,14 +136,32 @@ async function analyzeWithGemini(auditData) {
   Respond ONLY with valid JSON. No markdown.
   `;
 
-  const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
-  const response = await model.generateContent(prompt);
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
 
-  try {
-    const text = response.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-    return JSON.parse(text);
-  } catch (e) {
-    console.error('Failed to parse Gemini response');
-    return { companyName: auditData.url, pitch: response.response.text(), leadScore: 50 };
+  for (const modelName of models) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`Trying ${modelName} (attempt ${attempt})...`);
+        const model = ai.getGenerativeModel({ model: modelName });
+        const response = await model.generateContent(prompt);
+        const text = response.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(text);
+      } catch (e) {
+        const is503 = e.message?.includes('503') || e.message?.includes('overloaded') || e.message?.includes('high demand');
+        if (is503 && attempt < 3) {
+          const wait = attempt * 4000;
+          console.log(`${modelName} overloaded. Waiting ${wait/1000}s...`);
+          await new Promise(r => setTimeout(r, wait));
+        } else if (is503) {
+          console.log(`${modelName} exhausted retries. Trying next model...`);
+          break;
+        } else {
+          console.error(`Gemini error (${modelName}):`, e.message);
+          return { companyName: auditData.url, pitch: 'AI analysis failed.', leadScore: 50 };
+        }
+      }
+    }
   }
+
+  return { companyName: auditData.url, pitch: 'All models unavailable. Try again later.', leadScore: 50 };
 }
