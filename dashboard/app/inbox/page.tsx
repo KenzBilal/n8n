@@ -8,16 +8,21 @@ export default function Inbox() {
   const [selectedCompany, setSelectedCompany] = useState<any | null>(null);
   const [thread, setThread] = useState<any[]>([]);
   const [drafts, setDrafts] = useState<any[]>([]);
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     fetchCompanies(filterMode);
     setSelectedCompany(null);
     setThread([]);
+    setContacts([]);
+    setDrafts([]);
   }, [filterMode]);
 
   useEffect(() => {
     if (selectedCompany) {
       fetchThread(selectedCompany.id);
+      fetchContacts(selectedCompany.id);
     }
   }, [selectedCompany]);
 
@@ -30,6 +35,14 @@ export default function Inbox() {
     if (data) setCompanies(data);
   }
 
+  async function fetchContacts(companyId: string) {
+    const { data } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('company_id', companyId);
+    if (data) setContacts(data);
+  }
+
   async function fetchThread(companyId: string) {
     const { data: emails } = await supabase
       .from('emails')
@@ -40,101 +53,288 @@ export default function Inbox() {
     if (emails) {
       setThread(emails);
       const emailIds = emails.map(e => e.id);
-      const { data: draftsData } = await supabase
-        .from('drafts')
-        .select('*')
-        .in('email_id', emailIds);
-      if (draftsData) setDrafts(draftsData);
+      if (emailIds.length > 0) {
+        const { data: draftsData } = await supabase
+          .from('drafts')
+          .select('*')
+          .in('email_id', emailIds);
+        if (draftsData) setDrafts(draftsData);
+      }
     }
   }
 
+  const scoreColor = (s: number) => {
+    if (s < 30) return '#f87171';
+    if (s < 60) return '#fb923c';
+    return '#4ade80';
+  };
+
+  const formatDate = (d: string) => {
+    const date = new Date(d);
+    return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
-    <div className="flex h-screen bg-[#0F0F0F] text-zinc-300 font-inter">
-      {/* Sidebar - Thread List */}
-      <div className="w-1/3 border-r border-zinc-800/50 flex flex-col">
-        <div className="p-6 border-b border-zinc-800/50">
-          <div className="flex space-x-4">
-            <button 
-              onClick={() => setFilterMode('REPLIED')}
-              className={`text-lg font-medium tracking-tight pb-1 border-b-2 ${filterMode === 'REPLIED' ? 'border-white text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
-            >
-              Replies
-            </button>
-            <button 
-              onClick={() => setFilterMode('PITCHED')}
-              className={`text-lg font-medium tracking-tight pb-1 border-b-2 ${filterMode === 'PITCHED' ? 'border-white text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
-            >
-              Sent
-            </button>
+    <div style={{ display: 'flex', height: 'calc(100vh - 96px)', gap: 0 }}>
+
+      {/* ── Left panel: conversation list ── */}
+      <div style={{
+        width: 300, flexShrink: 0,
+        background: 'var(--bg-secondary)',
+        border: '1px solid var(--border)',
+        borderRadius: 10,
+        display: 'flex', flexDirection: 'column',
+        overflow: 'hidden',
+        marginRight: 16,
+      }}>
+        {/* Header + tabs */}
+        <div style={{ padding: '20px 20px 0', borderBottom: '1px solid var(--border)' }}>
+          <h1 className="page-title" style={{ marginBottom: 16 }}>Inbox</h1>
+          <div style={{ display: 'flex', gap: 0 }}>
+            {(['REPLIED', 'PITCHED'] as const).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setFilterMode(mode)}
+                style={{
+                  flex: 1,
+                  padding: '8px 0',
+                  fontSize: 12, fontWeight: 600,
+                  fontFamily: 'Inter, sans-serif',
+                  background: 'none', border: 'none',
+                  cursor: 'pointer',
+                  color: filterMode === mode ? 'var(--text-primary)' : 'var(--text-muted)',
+                  borderBottom: filterMode === mode ? '2px solid var(--text-primary)' : '2px solid transparent',
+                  transition: 'all 0.15s',
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                {mode === 'REPLIED' ? 'Replies' : 'Sent'}
+              </button>
+            ))}
           </div>
         </div>
-        <div className="overflow-y-auto flex-1">
+
+        {/* Company list */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
           {companies.length === 0 ? (
-            <div className="p-6 text-zinc-500 text-sm">No {filterMode === 'REPLIED' ? 'active replies' : 'sent pitches'} yet.</div>
+            <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+              No {filterMode === 'REPLIED' ? 'replies' : 'sent pitches'} yet.
+            </div>
           ) : (
             companies.map(c => (
               <div
                 key={c.id}
                 onClick={() => setSelectedCompany(c)}
-                className={`p-5 cursor-pointer border-b border-zinc-800/30 transition-all hover:bg-zinc-800/30 ${selectedCompany?.id === c.id ? 'bg-zinc-800/50 border-l-2 border-l-blue-500' : ''}`}
+                style={{
+                  padding: '14px 20px',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  cursor: 'pointer',
+                  background: selectedCompany?.id === c.id ? 'var(--bg-elevated)' : 'transparent',
+                  borderLeft: selectedCompany?.id === c.id ? '2px solid var(--text-primary)' : '2px solid transparent',
+                  transition: 'all 0.12s',
+                }}
+                onMouseEnter={e => { if (selectedCompany?.id !== c.id) (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-elevated)'; }}
+                onMouseLeave={e => { if (selectedCompany?.id !== c.id) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
               >
-                <div className="font-medium text-zinc-100">{c.name}</div>
-                <div className="text-xs text-zinc-500 mt-1">{c.website_url}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{c.name}</div>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700,
+                    fontFamily: 'JetBrains Mono, monospace',
+                    color: scoreColor(c.lead_score),
+                  }}>{c.lead_score}</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
+                  {c.website_url}
+                </div>
               </div>
             ))
           )}
         </div>
       </div>
 
-      {/* Main Content - Email Thread & Drafts */}
-      <div className="flex-1 flex flex-col bg-[#141414]">
-        {selectedCompany ? (
-          <>
-            <div className="p-6 border-b border-zinc-800/50 bg-[#0F0F0F]">
-              <h1 className="text-2xl font-semibold text-white">{selectedCompany.name}</h1>
-              <a href={`https://${selectedCompany.website_url}`} target="_blank" className="text-sm text-blue-400 hover:underline">
-                {selectedCompany.website_url}
+      {/* ── Main area ── */}
+      {selectedCompany ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+
+          {/* Company header card */}
+          <div style={{
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            padding: '18px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.02em', marginBottom: 4 }}>
+                {selectedCompany.name}
+              </div>
+              <a
+                href={`https://${selectedCompany.website_url}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mono"
+                style={{ color: 'var(--text-muted)', textDecoration: 'none' }}
+              >
+                {selectedCompany.website_url} ↗
               </a>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-8 space-y-6">
-              {thread.map(email => (
-                <div key={email.id} className={`flex flex-col ${email.direction === 'outbound' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[80%] rounded-xl p-5 ${email.direction === 'outbound' ? 'bg-zinc-800/80 text-zinc-300' : 'bg-blue-900/20 border border-blue-900/40 text-blue-50'}`}>
-                    <div className="text-xs font-mono mb-3 opacity-60 uppercase tracking-wider">
-                      {email.direction === 'outbound' ? 'Sent Pitch' : 'Client Reply'}
-                    </div>
-                    <div className="font-medium text-sm mb-2">{email.subject}</div>
-                    <div className="text-sm whitespace-pre-wrap leading-relaxed opacity-90" dangerouslySetInnerHTML={{ __html: email.body_text }} />
-                  </div>
-
-                  {/* Show Gemini Draft for Inbound Emails */}
-                  {email.direction === 'inbound' && drafts.find(d => d.email_id === email.id) && (
-                    <div className="mt-4 w-full max-w-[80%] rounded-xl p-5 bg-emerald-900/10 border border-emerald-900/30">
-                      <div className="text-xs font-mono mb-3 text-emerald-500 uppercase tracking-wider flex items-center gap-2">
-                        <span>✨ AI Draft Response</span>
-                      </div>
-                      <textarea
-                        className="w-full bg-zinc-900/50 border border-zinc-800 rounded p-4 text-sm text-zinc-300 h-40 focus:outline-none focus:border-emerald-500/50"
-                        defaultValue={drafts.find(d => d.email_id === email.id)?.draft_text}
-                      />
-                      <div className="mt-4 flex justify-end">
-                        <button className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded transition-colors">
-                          Send Reply
-                        </button>
-                      </div>
-                    </div>
-                  )}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              {/* Contact chip */}
+              {contacts[0]?.email && (
+                <div style={{
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  padding: '6px 12px',
+                  fontSize: 11, color: 'var(--text-secondary)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                }}>
+                  {contacts[0].email}
                 </div>
-              ))}
+              )}
+              {/* Score badge */}
+              <div style={{
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: '6px 14px',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span className="section-heading" style={{ marginBottom: 0 }}>Score</span>
+                <span style={{ fontSize: 18, fontWeight: 700, color: scoreColor(selectedCompany.lead_score), fontFamily: 'JetBrains Mono, monospace' }}>
+                  {selectedCompany.lead_score}
+                </span>
+              </div>
             </div>
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-zinc-600">
-            Select a conversation to view the thread.
           </div>
-        )}
-      </div>
+
+          {/* Thread */}
+          <div style={{
+            flex: 1,
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}>
+            {/* Thread header */}
+            <div style={{ padding: '14px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div className="section-heading" style={{ marginBottom: 0 }}>Email Thread — {thread.length} message{thread.length !== 1 ? 's' : ''}</div>
+            </div>
+
+            {/* Messages */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {thread.length === 0 ? (
+                <div className="empty-state">No emails in this thread yet.</div>
+              ) : thread.map(email => {
+                const isOut = email.direction === 'outbound';
+                const draft = drafts.find(d => d.email_id === email.id);
+                return (
+                  <div key={email.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isOut ? 'flex-end' : 'flex-start', gap: 10 }}>
+                    {/* Label */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 6, height: 6, borderRadius: '50%',
+                        background: isOut ? 'var(--text-muted)' : '#60a5fa',
+                      }} />
+                      <span className="section-heading" style={{ marginBottom: 0, color: isOut ? 'var(--text-muted)' : '#60a5fa' }}>
+                        {isOut ? 'Outbound Pitch' : 'Client Reply'} · {formatDate(email.created_at)}
+                      </span>
+                    </div>
+
+                    {/* Bubble */}
+                    <div style={{
+                      maxWidth: '75%',
+                      background: isOut ? 'var(--bg-elevated)' : 'rgba(96, 165, 250, 0.06)',
+                      border: `1px solid ${isOut ? 'var(--border)' : 'rgba(96, 165, 250, 0.2)'}`,
+                      borderRadius: 10,
+                      padding: '16px 20px',
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+                        {email.subject}
+                      </div>
+                      <div
+                        style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}
+                        dangerouslySetInnerHTML={{ __html: email.body_text }}
+                      />
+                    </div>
+
+                    {/* Gemini AI Draft */}
+                    {!isOut && draft && (
+                      <div style={{
+                        width: '75%',
+                        background: 'rgba(74, 222, 128, 0.04)',
+                        border: '1px solid rgba(74, 222, 128, 0.15)',
+                        borderRadius: 10,
+                        padding: '16px 20px',
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80' }} />
+                            <span className="section-heading" style={{ marginBottom: 0, color: '#4ade80' }}>AI Draft Response</span>
+                          </div>
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(draft.draft_text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                            className="btn-primary"
+                            style={{ fontSize: 11, padding: '4px 12px' }}
+                          >
+                            {copied ? 'Copied!' : 'Copy'}
+                          </button>
+                        </div>
+                        <textarea
+                          defaultValue={draft.draft_text}
+                          style={{
+                            width: '100%',
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 6,
+                            padding: '12px 14px',
+                            fontSize: 12,
+                            color: 'var(--text-secondary)',
+                            lineHeight: 1.7,
+                            height: 160,
+                            resize: 'vertical',
+                            outline: 'none',
+                            fontFamily: 'Inter, sans-serif',
+                          }}
+                          onFocus={e => e.target.style.borderColor = 'var(--text-muted)'}
+                          onBlur={e => e.target.style.borderColor = 'var(--border)'}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                          <button className="btn-primary" style={{ fontSize: 12 }}>
+                            Send Reply
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--bg-secondary)',
+          border: '1px solid var(--border)',
+          borderRadius: 10,
+        }}>
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 28, marginBottom: 12 }}>✉️</div>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>Select a conversation</div>
+            <div style={{ fontSize: 12, marginTop: 4 }}>Click a company from the left panel</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
