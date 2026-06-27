@@ -623,22 +623,23 @@ async function analyzeWithCohere(auditData) {
 async function analyzeWithGroq(auditData) {
   console.log('Generating internal suggestions with Groq (Llama-3)...');
   const prompt = `
-  You are the lead strategist at Webcord.
+  You are the lead technical strategist at Webcord.
   We just audited a potential client's website: ${auditData.url}
   Score: ${auditData.score}/100.
   Issues found: ${auditData.issues?.map(i => i.issue).join(', ')}
   
   Write a ruthless, internal-only cheat sheet for ME (the salesperson). 
-  Tell me exactly what is broken on their site and exactly what Webcord service to sell them to fix it.
+  I need a bulleted list of exact, concrete technical upgrades we can sell them based on their issues.
+  
+  Format strictly as bullet points following this exact structure:
+  • Implement [Solution] to [Benefit]
+  • Replace [Old Tech/Problem] with [New Tech/Solution] for [Benefit]
+  • Fix [Specific Security/Missing Page Issue] to [Benefit]
   
   Rules:
-  - DO NOT talk to the client. Talk to ME. (Use "They have", not "You have").
-  - Be blunt, specific, and tactical.
-  - Format as 3-4 bullet points.
-  
-  Example:
-  - They have 14 images missing alt-text. Pitch them our SEO & Accessibility Optimization package to fix their broken search rankings.
-  - Load time is a catastrophic 5.5s because of 38 bloated scripts. Sell them our Speed Optimization service to stop them losing conversions.
+  - DO NOT talk to the client. Talk to ME.
+  - Be blunt, highly technical, and specific based on their actual issues.
+  - No fluff, no paragraphs, just 3-5 punchy bullet points.
   `;
   
   try {
