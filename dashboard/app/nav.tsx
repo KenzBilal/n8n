@@ -1,13 +1,15 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Globe, Users, Mail, FileText, BarChart3, Settings } from "lucide-react";
 
 const links = [
-  { href: "/", label: "Overview", group: "Main" },
-  { href: "/prospects", label: "Prospects", group: "Main" },
-  { href: "/audits", label: "Audits", group: "Main" },
-  { href: "/pitches", label: "Pitches", group: "Output" },
-  { href: "/settings", label: "Settings", group: null },
+  { href: "/", label: "Overview", group: "Main", icon: Globe },
+  { href: "/prospects", label: "Prospects", group: "Main", icon: Users },
+  { href: "/inbox", label: "Inbox", group: "Main", icon: Mail },
+  { href: "/audits", label: "Audits", group: "Main", icon: BarChart3 },
+  { href: "/pitches", label: "Pitches", group: "Output", icon: FileText },
+  { href: "/settings", label: "Settings", group: null, icon: Settings },
 ];
 
 export default function Nav() {

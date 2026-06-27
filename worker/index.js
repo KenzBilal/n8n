@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { CohereClient } from 'cohere-ai';
+import { Resend } from 'resend';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import puppeteer from 'puppeteer';
 import dotenv from 'dotenv';
 import ws from 'ws';
@@ -10,6 +12,8 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
   realtime: { transport: ws }
 });
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
+const resend = new Resend(process.env.RESEND_API_KEY || 're_YBdNY2TB_Asd3bf4ZAwhYuoUKqaNg3TSH');
+const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 let engineRunning = false;
 let jobProcessing = false;
@@ -84,6 +88,8 @@ async function handleJob(job) {
   try {
     if (job.type === 'DISCOVER') {
       await handleDiscover(job);
+    } else if (job.type === 'PROCESS_REPLY') {
+      await handleProcessReply(job);
     } else {
       await handleScrape(job);
     }
@@ -208,6 +214,75 @@ async function handleScrape(job) {
   });
 
   console.log(`✓ ${company.name} | Score: ${auditData.score} | Issues: ${auditData.issues?.length} | Contacts: ${contacts.length}`);
+
+  // ─── Auto-Send Logic ────────────────────────────────────────────────────────
+  if (auditData.score < 50 && contacts.length > 0 && contacts[0].email) {
+    const targetEmail = contacts[0].email;
+    const { count } = await supabase.from('emails')
+      .select('*', { count: 'exact', head: true })
+      .eq('direction', 'outbound')
+      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+    
+    if (count < 90) {
+      console.log(`Score is < 50. Auto-sending pitch to ${targetEmail} via Resend...`);
+      try {
+        const { data, error } = await resend.emails.send({
+          from: 'Kenz <hello@webcord.in>',
+          to: targetEmail,
+          subject: 'Quick question about your website',
+          html: aiAnalysis.pitch.replace(/\n/g, '<br>')
+        });
+        if (error) throw error;
+        
+        await supabase.from('emails').insert({
+          company_id: company.id,
+          direction: 'outbound',
+          subject: 'Quick question about your website',
+          body_text: aiAnalysis.pitch
+        });
+        await supabase.from('companies').update({ status: 'PITCHED' }).eq('id', company.id);
+        console.log(`✓ Pitch sent to ${targetEmail} (24h count: ${count + 1})`);
+      } catch (err) {
+        console.error('Failed to auto-send email:', err.message);
+      }
+    } else {
+      console.log('Skipping auto-send: Daily limit of 90 reached.');
+    }
+  }
+}
+
+// ─── PROCESS_REPLY: Gemini Draft Agent ────────────────────────────────────────
+
+async function handleProcessReply(job) {
+  const { email_id, company_id, body_text } = job.payload;
+  console.log(`Processing reply for company ${company_id}...`);
+  
+  const prompt = `
+  You are an expert sales closer. A potential client just replied to our cold email.
+  Read their reply and write a highly professional, persuasive response.
+  If they ask questions, answer them confidently. If they want to meet, suggest a time.
+  Keep it concise, polite, and persuasive.
+  
+  Client Reply:
+  "${body_text}"
+  
+  Respond with only the exact text of the email draft you want me to send. No markdown, no preambles.
+  `;
+
+  try {
+    const model = gemini.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const response = await model.generateContent(prompt);
+    const draftText = response.response.text().trim();
+    
+    await supabase.from('drafts').insert({
+      email_id: email_id,
+      draft_text: draftText,
+      status: 'pending'
+    });
+    console.log(`✓ Gemini generated draft for email ${email_id}`);
+  } catch (err) {
+    console.error('Gemini draft generation failed:', err.message);
+  }
 }
 
 // ─── Deep Audit ───────────────────────────────────────────────────────────────
