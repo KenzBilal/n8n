@@ -140,7 +140,7 @@ export default function ProspectsPage() {
 
       {/* Right: Detail Panel */}
       {selected && (
-        <div style={{ width: "50%", background: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: 10, padding: 32, overflowY: "auto", flexShrink: 0 }}>
+        <div style={{ width: 500, background: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: 10, padding: 32, overflowY: "auto", flexShrink: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{selected.name}</div>
