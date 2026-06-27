@@ -100,7 +100,7 @@ export default function Inbox() {
             <div className="flex-1 overflow-y-auto p-8 space-y-6">
               {thread.map(email => (
                 <div key={email.id} className={`flex flex-col ${email.direction === 'outbound' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[80%] p-5 ${email.direction === 'outbound' ? 'bg-[#1A1A1A] text-white border border-[#333333]' : 'bg-black border border-[#555555] text-white'}`}>
+                  <div className={`max-w-[80%] rounded-xl p-5 ${email.direction === 'outbound' ? 'bg-[#1A1A1A] text-white border border-[#333333]' : 'bg-black border border-[#555555] text-white'}`}>
                     <div className="text-xs font-mono mb-3 text-[#808080] uppercase tracking-wider">
                       {email.direction === 'outbound' ? 'Sent Pitch' : 'Client Reply'}
                     </div>
@@ -110,16 +110,16 @@ export default function Inbox() {
                   
                   {/* Show Gemini Draft for Inbound Emails */}
                   {email.direction === 'inbound' && drafts.find(d => d.email_id === email.id) && (
-                    <div className="mt-4 w-full max-w-[80%] p-5 bg-black border border-white">
+                    <div className="mt-4 w-full max-w-[80%] rounded-xl p-5 bg-black border border-white">
                       <div className="text-xs font-mono mb-3 text-white uppercase tracking-wider flex items-center gap-2">
                         <span>AI Draft Response</span>
                       </div>
                       <textarea 
-                        className="w-full bg-[#111111] border border-[#333333] p-4 text-sm text-white h-40 focus:outline-none focus:border-white"
+                        className="w-full bg-[#111111] rounded-lg border border-[#333333] p-4 text-sm text-white h-40 focus:outline-none focus:border-white"
                         defaultValue={drafts.find(d => d.email_id === email.id)?.draft_text}
                       />
                       <div className="mt-4 flex justify-end">
-                        <button className="bg-white hover:bg-[#CCCCCC] text-black text-sm font-bold px-4 py-2 transition-colors">
+                        <button className="bg-white hover:bg-[#CCCCCC] text-black rounded text-sm font-bold px-4 py-2 transition-colors">
                           Send Reply
                         </button>
                       </div>
