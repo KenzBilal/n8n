@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { Webhook } from 'svix';
+import { headers } from 'next/headers';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,7 +10,31 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
-    const payload = await req.json();
+    const payloadString = await req.text();
+    const headerPayload = headers();
+    const svix_id = headerPayload.get("svix-id");
+    const svix_timestamp = headerPayload.get("svix-timestamp");
+    const svix_signature = headerPayload.get("svix-signature");
+
+    if (!svix_id || !svix_timestamp || !svix_signature) {
+      return NextResponse.json({ error: 'Missing svix headers' }, { status: 400 });
+    }
+
+    // Use environment variable in production, fallback to hardcoded for immediate use
+    const webhookSecret = process.env.RESEND_WEBHOOK_SECRET || 'whsec_wtI7tX1nH8jOfbyG3+KG+PwygVNSefJ+';
+    const wh = new Webhook(webhookSecret);
+    
+    let payload: any;
+    try {
+      payload = wh.verify(payloadString, {
+        "svix-id": svix_id,
+        "svix-timestamp": svix_timestamp,
+        "svix-signature": svix_signature,
+      });
+    } catch (err: any) {
+      console.error('Webhook signature verification failed:', err.message);
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
+    }
 
     if (payload.type !== 'email.received') {
       return NextResponse.json({ message: 'Ignored' });
