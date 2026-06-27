@@ -60,7 +60,7 @@ export default function Inbox() {
               <div 
                 key={c.id}
                 onClick={() => setSelectedCompany(c)}
-                className={\`p-5 cursor-pointer border-b border-zinc-800/30 transition-all hover:bg-zinc-800/30 \${selectedCompany?.id === c.id ? 'bg-zinc-800/50 border-l-2 border-l-blue-500' : ''}\`}
+                className={`p-5 cursor-pointer border-b border-zinc-800/30 transition-all hover:bg-zinc-800/30 ${selectedCompany?.id === c.id ? 'bg-zinc-800/50 border-l-2 border-l-blue-500' : ''}`}
               >
                 <div className="font-medium text-zinc-100">{c.name}</div>
                 <div className="text-xs text-zinc-500 mt-1">{c.website_url}</div>
@@ -76,15 +76,15 @@ export default function Inbox() {
           <>
             <div className="p-6 border-b border-zinc-800/50 bg-[#0F0F0F]">
               <h1 className="text-2xl font-semibold text-white">{selectedCompany.name}</h1>
-              <a href={\`https://\${selectedCompany.website_url}\`} target="_blank" className="text-sm text-blue-400 hover:underline">
+              <a href={`https://${selectedCompany.website_url}`} target="_blank" className="text-sm text-blue-400 hover:underline">
                 {selectedCompany.website_url}
               </a>
             </div>
             
             <div className="flex-1 overflow-y-auto p-8 space-y-6">
               {thread.map(email => (
-                <div key={email.id} className={\`flex flex-col \${email.direction === 'outbound' ? 'items-end' : 'items-start'}\`}>
-                  <div className={\`max-w-[80%] rounded-xl p-5 \${email.direction === 'outbound' ? 'bg-zinc-800/80 text-zinc-300' : 'bg-blue-900/20 border border-blue-900/40 text-blue-50'}\`}>
+                <div key={email.id} className={`flex flex-col ${email.direction === 'outbound' ? 'items-end' : 'items-start'}`}>
+                  <div className={`max-w-[80%] rounded-xl p-5 ${email.direction === 'outbound' ? 'bg-zinc-800/80 text-zinc-300' : 'bg-blue-900/20 border border-blue-900/40 text-blue-50'}`}>
                     <div className="text-xs font-mono mb-3 opacity-60 uppercase tracking-wider">
                       {email.direction === 'outbound' ? 'Sent Pitch' : 'Client Reply'}
                     </div>
