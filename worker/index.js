@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js';
 import { CohereClient } from 'cohere-ai';
 import puppeteer from 'puppeteer';
 import dotenv from 'dotenv';
@@ -378,7 +379,7 @@ async function analyzeWithCohere(auditData) {
     try {
       const response = await cohere.chat({
         message: prompt,
-        model: 'command-r-plus',
+        model: 'command-r-plus-08-2024',
         responseFormat: { type: 'json_object' }
       });
       
