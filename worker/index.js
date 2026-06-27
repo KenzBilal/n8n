@@ -428,6 +428,27 @@ async function runAudit(url) {
       const body = document.body.innerText || '';
       r.wordCount = body.split(/\s+/).filter(Boolean).length;
       r.hasPhoneNumber = /(\+?\d[\d\s\-().]{7,}\d)/.test(body);
+      
+      // Deep Extraction: Tech Stack
+      r.isWordPress = !!document.querySelector('meta[name="generator"][content*="WordPress"]') || html.includes('/wp-content/');
+      r.isShopify = !!window.Shopify || !!document.querySelector('script[src*="cdn.shopify.com"]');
+      r.isWebflow = !!document.querySelector('html[data-wf-site]');
+      r.isReact = !!document.querySelector('[data-reactroot]') || !!window.__REACT_DEVTOOLS_GLOBAL_HOOK__ || html.includes('react-dom');
+      r.isNextJs = !!document.querySelector('#__next') || !!window.__NEXT_DATA__;
+      r.isJQuery = !!window.jQuery || html.includes('jquery.min.js');
+      
+      // Deep Extraction: Content & Niche
+      r.headings = Array.from(document.querySelectorAll('h2')).map(h => h.innerText.trim()).filter(t => t.length > 5).slice(0, 5);
+      r.paragraphs = Array.from(document.querySelectorAll('p')).map(p => p.innerText.trim()).filter(t => t.length > 50).slice(0, 3);
+      r.hasPricingSignals = html.includes('Pricing') || html.includes('Plans') || html.includes('$');
+      
+      // Deep Extraction: Security & Trust
+      r.hasPrivacyPolicy = Array.from(document.querySelectorAll('a')).some(a => a.innerText.toLowerCase().includes('privacy'));
+      r.hasUnsecureForms = Array.from(document.querySelectorAll('form')).some(f => {
+        const action = f.getAttribute('action');
+        return !action || action.startsWith('http://');
+      });
+      
       return r;
     });
 
@@ -448,6 +469,8 @@ async function runAudit(url) {
     if (!checks.hasLazyLoading && checks.totalImages > 3) issues.push({ category: 'Performance', severity: 'low', issue: 'Images not lazy loaded' });
     if (checks.scriptCount > 10)    issues.push({ category: 'Performance', severity: 'medium', issue: `Heavy page — ${checks.scriptCount} external scripts` });
     if (!checks.hasGoogleAnalytics && !checks.hasGTM) issues.push({ category: 'Analytics', severity: 'high', issue: 'No analytics tracking found' });
+    if (!checks.hasPrivacyPolicy)   issues.push({ category: 'Security', severity: 'high', issue: 'Missing Privacy Policy link' });
+    if (checks.hasUnsecureForms)    issues.push({ category: 'Security', severity: 'high', issue: 'Unsecured form submission detected' });
     if (!checks.hasFavicon)         issues.push({ category: 'Branding', severity: 'low', issue: 'No favicon' });
     if (!checks.hasSocialLinks)     issues.push({ category: 'Social', severity: 'low', issue: 'No social media links' });
     if (!checks.hasForms)           issues.push({ category: 'Conversion', severity: 'medium', issue: 'No lead capture form' });
@@ -490,7 +513,21 @@ async function runAudit(url) {
     });
 
     await browser.close();
-    return { auditData: { url, title, score, loadTimeMs, ssl: url.includes('https'), issues, summary: { totalIssues: issues.length, ...checks } }, contacts };
+    let techStack = 'Unknown/Custom';
+    if (checks.isNextJs) techStack = 'Next.js (React)';
+    else if (checks.isReact) techStack = 'React';
+    else if (checks.isShopify) techStack = 'Shopify';
+    else if (checks.isWebflow) techStack = 'Webflow';
+    else if (checks.isWordPress) techStack = 'WordPress';
+    else if (checks.isJQuery) techStack = 'Legacy jQuery';
+    
+    const businessContext = {
+        headings: checks.headings || [],
+        paragraphs: checks.paragraphs || [],
+        hasPricing: checks.hasPricingSignals || false
+    };
+
+    return { auditData: { url, title, score, loadTimeMs, ssl: url.includes('https'), issues, techStack, businessContext, summary: { totalIssues: issues.length, ...checks } }, contacts };
 
   } catch (e) {
     console.error('Audit error:', e.message);
@@ -579,6 +616,10 @@ async function analyzeWithCohere(auditData) {
   
   Website: ${auditData.url}
   Title: "${auditData.title}"
+  Tech Stack: ${auditData.techStack}
+  Business Signals: ${auditData.businessContext.hasPricing ? 'Sells products/plans' : 'Lead generation'}
+  Core Content: ${auditData.businessContext.headings.join(' | ')}
+  
   Score: ${auditData.score}/100
   Load Time: ${(auditData.loadTimeMs / 1000).toFixed(1)}s
   SSL: ${auditData.ssl ? 'Yes' : 'NO'}
@@ -590,7 +631,7 @@ async function analyzeWithCohere(auditData) {
   1. "companyName": name from URL/title
   2. "industry": specific industry (e.g. "Plumbing Services" not "Services")
   3. "leadScore": 1-100, lower = worse site = hotter lead
-  4. "pitch": cold email max 180 words. You represent Webcord, a web performance and digital growth agency. Reference 2-3 specific issues found on their site. Sign off as "Webcord Team". No "I noticed your website" or "I hope this finds you well". Sound professional, direct, and confident.
+  4. "pitch": cold email max 180 words. You represent Webcord, a web performance and digital growth agency. Reference their specific industry/niche and 1-2 specific technical issues. Sign off as "Webcord Team". Sound professional, direct, and confident.
   `;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -625,11 +666,13 @@ async function analyzeWithGroq(auditData) {
   const prompt = `
   You are the lead technical strategist at Webcord.
   We just audited a potential client's website: ${auditData.url}
+  Tech Stack Detected: ${auditData.techStack}
+  Business Context: ${auditData.businessContext.headings.join(' | ')}
   Score: ${auditData.score}/100.
   Issues found: ${auditData.issues?.map(i => i.issue).join(', ')}
   
   Write a ruthless, internal-only cheat sheet for ME (the salesperson). 
-  I need a bulleted list of exact, concrete technical upgrades we can sell them based on their issues.
+  I need a bulleted list of exact, concrete technical upgrades we can sell them based on their issues and tech stack.
   
   Format strictly as bullet points following this exact structure:
   • Implement [Solution] to [Benefit]
@@ -638,7 +681,7 @@ async function analyzeWithGroq(auditData) {
   
   Rules:
   - DO NOT talk to the client. Talk to ME.
-  - Be blunt, highly technical, and specific based on their actual issues.
+  - Be blunt, highly technical, and specific based on their actual issues and platform (e.g. if they use WordPress, suggest headless; if they use jQuery, suggest React).
   - No fluff, no paragraphs, just 3-5 punchy bullet points.
   `;
   
