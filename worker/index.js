@@ -14,6 +14,8 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
 const resend = new Resend(process.env.RESEND_API_KEY || 're_YBdNY2TB_Asd3bf4ZAwhYuoUKqaNg3TSH');
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+import Groq from "groq-sdk";
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 let engineRunning = false;
 let jobProcessing = false;
@@ -47,6 +49,46 @@ supabase
       if (engineRunning) fetchPendingJobs();
     }
   });
+
+// Run daily cleanup interval
+setInterval(runDailyCleanup, 1000 * 60 * 60 * 24); // Every 24 hours
+setTimeout(runDailyCleanup, 5000); // Also run once 5s after boot
+
+async function runDailyCleanup() {
+  console.log('Running daily cleanup for 30-day stale leads...');
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('companies')
+    .select('id')
+    .eq('status', 'PITCHED')
+    .lt('created_at', thirtyDaysAgo);
+
+  if (data && data.length > 0) {
+    const ids = data.map(d => d.id);
+    await supabase.from('companies').update({
+      status: 'REJECTED',
+    }).in('id', ids);
+
+    // Also update audit results for reason
+    for (const id of ids) {
+      const { data: audit } = await supabase.from('audits').select('id').eq('company_id', id).single();
+      if (audit) {
+        await supabase.from('audit_results').update({
+          issues_found: { rejection_reason: "No reply after 30 days" }
+        }).eq('audit_id', audit.id).eq('category', 'REJECTED'); // Or insert if missing
+        
+        // Wait, just insert a new REJECTED audit_result row
+        await supabase.from('audit_results').insert({
+          audit_id: audit.id,
+          category: 'REJECTED',
+          raw_data: {},
+          issues_found: { rejection_reason: "No reply after 30 days" }
+        });
+      }
+    }
+    console.log(`✓ Cleaned up ${ids.length} stale leads.`);
+  }
+}
 
 async function fetchPendingJobs() {
   if (!engineRunning) return;
@@ -186,6 +228,7 @@ async function handleScrape(job) {
   }
 
   const aiAnalysis = await analyzeWithCohere(auditData);
+  const groqSuggestions = await analyzeWithGroq(auditData);
 
   const { data: company } = await supabase.from('companies').insert({
     name: aiAnalysis.companyName || job.payload.target,
@@ -201,6 +244,7 @@ async function handleScrape(job) {
         company_id: company.id,
         email: c.email || null,
         linkedin_url: c.linkedin || null,
+        instagram_url: c.instagram || null,
         is_primary: i === 0,
       }))
     );
@@ -216,7 +260,7 @@ async function handleScrape(job) {
     audit_id: audit.id,
     category: 'AI_PITCH',
     raw_data: auditData,
-    issues_found: { pitch: aiAnalysis.pitch, issues: auditData.issues }
+    issues_found: { pitch: aiAnalysis.pitch, suggestions: groqSuggestions, issues: auditData.issues }
   });
 
   console.log(`✓ ${company.name} | Score: ${auditData.score} | Issues: ${auditData.issues?.length} | Contacts: ${contacts.length}`);
@@ -232,11 +276,23 @@ async function handleScrape(job) {
     if (count < 90) {
       console.log(`Score is < 30. Auto-sending pitch to ${targetEmail} via Resend...`);
       try {
+        const htmlTemplate = `
+          <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; line-height: 1.6; color: #111;">
+            <p>${aiAnalysis.pitch.replace(/\n/g, '<br>')}</p>
+            <br>
+            <hr style="border: none; border-top: 1px solid #eaeaea; margin: 24px 0;">
+            <div style="font-size: 12px; color: #666;">
+              <strong>Webcord Team</strong><br>
+              <a href="https://webcord.in" style="color: #666; text-decoration: none;">webcord.in</a> • Growth & Performance
+            </div>
+          </div>
+        `;
+        
         const { data, error } = await resend.emails.send({
           from: 'Webcord <hello@webcord.in>',
           to: targetEmail,
           subject: 'Quick question about your website',
-          html: aiAnalysis.pitch.replace(/\n/g, '<br>')
+          html: htmlTemplate
         });
         if (error) throw error;
         
@@ -244,7 +300,7 @@ async function handleScrape(job) {
           company_id: company.id,
           direction: 'outbound',
           subject: 'Quick question about your website',
-          body_text: aiAnalysis.pitch
+          body_text: aiAnalysis.pitch // Keep plaintext for dashboard
         });
         await supabase.from('companies').update({ status: 'PITCHED' }).eq('id', company.id);
         console.log(`✓ Pitch sent to ${targetEmail} (24h count: ${count + 1})`);
@@ -263,6 +319,37 @@ async function handleProcessReply(job) {
   const { email_id, company_id, body_text } = job.payload;
   console.log(`Processing reply for company ${company_id}...`);
   
+  // 1. Classify Intent via Groq
+  const intentPrompt = `
+  Analyze this email reply to a cold outreach. Is the prospect rejecting us/not interested?
+  Reply ONLY with "REJECTED" or "INTERESTED".
+  Email: "${body_text}"
+  `;
+  const intentCompletion = await groq.chat.completions.create({
+    messages: [{ role: "user", content: intentPrompt }],
+    model: "llama3-8b-8192",
+    temperature: 0.1,
+  });
+  
+  const intent = intentCompletion.choices[0]?.message?.content?.trim().toUpperCase();
+  
+  if (intent.includes("REJECTED")) {
+    console.log(`Intent classified as REJECTED. Archiving company...`);
+    await supabase.from('companies').update({ status: 'REJECTED' }).eq('id', company_id);
+    
+    const { data: audit } = await supabase.from('audits').select('id').eq('company_id', company_id).single();
+    if (audit) {
+      await supabase.from('audit_results').insert({
+        audit_id: audit.id,
+        category: 'REJECTED',
+        raw_data: {},
+        issues_found: { rejection_reason: "Rejected by client" }
+      });
+    }
+    return; // Stop processing, no draft needed
+  }
+
+  // 2. Draft Reply via Gemini
   const prompt = `
   You are a professional sales closer representing Webcord, a web performance and digital growth agency.
   A potential client just replied to our cold outreach email.
@@ -458,13 +545,24 @@ async function extractContacts(page) {
       linkedins.add(a.href);
     });
 
+    // 6. Instagram profiles
+    const instagrams = new Set();
+    document.querySelectorAll('a[href*="instagram.com/"]').forEach(a => {
+      const href = a.href;
+      // skip instagram.com root, login, explore etc
+      if (!href.match(/instagram\.com\/(p\/|reel\/|explore|accounts|login|$)/)) {
+        instagrams.add(href.split('?')[0].replace(/\/$/, ''));
+      }
+    });
+
     // Build contacts array — email-first
     const contacts = [];
     const emailArr = [...emails].slice(0, 5);
     const linkedinArr = [...linkedins].slice(0, 3);
+    const instagramArr = [...instagrams].slice(0, 3);
 
-    emailArr.forEach((email, i) => contacts.push({ email, linkedin: linkedinArr[i] || null }));
-    linkedinArr.slice(emailArr.length).forEach(linkedin => contacts.push({ email: null, linkedin }));
+    emailArr.forEach((email, i) => contacts.push({ email, linkedin: linkedinArr[i] || null, instagram: instagramArr[i] || null }));
+    linkedinArr.slice(emailArr.length).forEach((linkedin, i) => contacts.push({ email: null, linkedin, instagram: instagramArr[emailArr.length + i] || null }));
 
     return contacts.slice(0, 5);
   });

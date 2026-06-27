@@ -2,9 +2,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
-const STATUSES = ["NEW", "AUDITING", "PITCHED", "CLOSED"];
+const STATUSES = ["NEW", "PITCHED", "REJECTED"];
 const STATUS_LABELS: Record<string, string> = {
-  NEW: "New", AUDITING: "Auditing", PITCHED: "Pitched", CLOSED: "Closed"
+  NEW: "New", PITCHED: "Pitched", REJECTED: "Archived"
 };
 
 export default function ProspectsPage() {
@@ -12,6 +12,9 @@ export default function ProspectsPage() {
   const [selected, setSelected] = useState<any>(null);
   const [contacts, setContacts] = useState<any[]>([]);
   const [pitch, setPitch] = useState("");
+  const [suggestions, setSuggestions] = useState("");
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [activeTab, setActiveTab] = useState<'PITCH' | 'SUGGESTIONS'>('PITCH');
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -33,31 +36,43 @@ export default function ProspectsPage() {
     setSelected(company);
     setContacts([]);
     setPitch("");
+    setSuggestions("");
+    setRejectionReason("");
+    setActiveTab('PITCH');
     const { data: ctcts } = await supabase.from("contacts").select("*").eq("company_id", company.id);
     if (ctcts) setContacts(ctcts);
     const { data: audit } = await supabase.from("audits").select("id").eq("company_id", company.id).single();
     if (audit) {
-      const { data: result } = await supabase.from("audit_results").select("issues_found").eq("audit_id", audit.id).eq("category", "AI_PITCH").single();
-      if (result) setPitch(result.issues_found?.pitch || "");
+      const { data: results } = await supabase.from("audit_results").select("*").eq("audit_id", audit.id);
+      if (results) {
+        const pitchRes = results.find(r => r.category === "AI_PITCH");
+        if (pitchRes) {
+          setPitch(pitchRes.issues_found?.pitch || "");
+          setSuggestions(pitchRes.issues_found?.suggestions || "");
+        }
+        const rejRes = results.find(r => r.category === "REJECTED");
+        if (rejRes) setRejectionReason(rejRes.issues_found?.rejection_reason || "");
+      }
     }
   };
 
-  const moveStatus = async (company: any, status: string) => {
-    await supabase.from("companies").update({ status }).eq("id", company.id);
-    setCompanies(prev => prev.map(c => c.id === company.id ? { ...c, status } : c));
-    if (selected?.id === company.id) setSelected({ ...company, status });
-  };
+  // Manual status moves are no longer allowed in UI. Everything is autonomous.
 
   const deleteCompany = async () => {
     if (!selected) return;
     setDeleting(true);
-    await supabase.from("audit_results").delete().in("audit_id",
-      (await supabase.from("audits").select("id").eq("company_id", selected.id)).data?.map((a: any) => a.id) || []
-    );
-    await supabase.from("audits").delete().eq("company_id", selected.id);
-    await supabase.from("contacts").delete().eq("company_id", selected.id);
-    await supabase.from("companies").delete().eq("id", selected.id);
-    setCompanies(prev => prev.filter(c => c.id !== selected.id));
+    await supabase.from("companies").update({ status: 'REJECTED' }).eq("id", selected.id);
+    // Add rejection reason
+    const { data: audit } = await supabase.from("audits").select("id").eq("company_id", selected.id).single();
+    if (audit) {
+      await supabase.from("audit_results").insert({
+        audit_id: audit.id,
+        category: 'REJECTED',
+        raw_data: {},
+        issues_found: { rejection_reason: "Manually deleted/rejected" }
+      });
+    }
+    setCompanies(prev => prev.map(c => c.id === selected.id ? { ...c, status: 'REJECTED' } : c));
     setSelected(null);
     setDeleting(false);
   };
@@ -93,7 +108,7 @@ export default function ProspectsPage() {
           />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
           {STATUSES.map(status => (
             <div key={status} className="kanban-col">
               <div className="kanban-col-header">{STATUS_LABELS[status]} ({byStatus(status).length})</div>
@@ -125,7 +140,7 @@ export default function ProspectsPage() {
 
       {/* Right: Detail Panel */}
       {selected && (
-        <div style={{ width: 360, background: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: 10, padding: 24, overflowY: "auto", flexShrink: 0 }}>
+        <div style={{ width: "50%", background: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: 10, padding: 32, overflowY: "auto", flexShrink: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{selected.name}</div>
@@ -151,27 +166,13 @@ export default function ProspectsPage() {
             </div>
           </div>
 
-          {/* Move status */}
-          <div style={{ marginBottom: 16 }}>
-            <div className="section-heading">Pipeline Stage</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {STATUSES.map(s => (
-                <button
-                  key={s}
-                  onClick={() => moveStatus(selected, s)}
-                  style={{
-                    padding: "5px 12px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                    background: (selected.status || "NEW") === s ? "var(--text-primary)" : "var(--bg)",
-                    color: (selected.status || "NEW") === s ? "#0a0a0a" : "var(--text-muted)",
-                    border: "1px solid var(--border)",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {STATUS_LABELS[s]}
-                </button>
-              ))}
+          {/* Rejection Reason (If Archived) */}
+          {selected.status === 'REJECTED' && rejectionReason && (
+            <div style={{ marginBottom: 16, padding: '12px 16px', background: '#3f1111', border: '1px solid #7f1d1d', borderRadius: 6 }}>
+              <div className="section-heading" style={{ color: '#fca5a5', marginBottom: 4 }}>Archived Reason</div>
+              <div style={{ fontSize: 13, color: '#fee2e2' }}>{rejectionReason}</div>
             </div>
-          </div>
+          )}
 
           {/* Contacts */}
           <div style={{ marginBottom: 16 }}>
@@ -206,20 +207,29 @@ export default function ProspectsPage() {
             )}
           </div>
 
-          {/* Pitch */}
-          {pitch && (
+          {/* Pitch & Suggestions */}
+          {(pitch || suggestions) && (
             <div style={{ marginBottom: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <div className="section-heading" style={{ marginBottom: 0 }}>AI Pitch</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: "flex", gap: 16 }}>
+                  <button 
+                    onClick={() => setActiveTab('PITCH')}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', paddingBottom: 8, fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: activeTab === 'PITCH' ? 'var(--text-primary)' : 'var(--text-muted)', borderBottom: activeTab === 'PITCH' ? '2px solid var(--text-primary)' : '2px solid transparent' }}
+                  >Pitch</button>
+                  <button 
+                    onClick={() => setActiveTab('SUGGESTIONS')}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', paddingBottom: 8, fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: activeTab === 'SUGGESTIONS' ? 'var(--text-primary)' : 'var(--text-muted)', borderBottom: activeTab === 'SUGGESTIONS' ? '2px solid var(--text-primary)' : '2px solid transparent' }}
+                  >Suggestions</button>
+                </div>
                 <button
-                  onClick={() => { navigator.clipboard.writeText(pitch); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-                  className="btn-primary" style={{ fontSize: 11, padding: "4px 12px" }}
+                  onClick={() => { navigator.clipboard.writeText(activeTab === 'PITCH' ? pitch : suggestions); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                  className="btn-primary" style={{ fontSize: 11, padding: "4px 12px", marginBottom: 8 }}
                 >
                   {copied ? "Copied!" : "Copy"}
                 </button>
               </div>
-              <div style={{ background: "var(--bg)", border: "1px solid var(--border-subtle)", borderRadius: 6, padding: 14, fontSize: 12, lineHeight: 1.7, color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>
-                {pitch}
+              <div style={{ background: "var(--bg)", border: "1px solid var(--border-subtle)", borderRadius: 6, padding: 20, fontSize: 14, lineHeight: 1.8, color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>
+                {activeTab === 'PITCH' ? pitch : (suggestions || 'No internal suggestions generated.')}
               </div>
             </div>
           )}
