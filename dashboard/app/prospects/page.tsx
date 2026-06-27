@@ -189,9 +189,15 @@ export default function ProspectsPage() {
                       </div>
                     )}
                     {c.linkedin_url && (
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: c.instagram_url ? 6 : 0 }}>
                         <span style={{ fontSize: 11, color: "var(--text-muted)" }}>LinkedIn</span>
                         <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="mono" style={{ fontSize: 11, color: "var(--text-secondary)", textDecoration: "none" }}>View ↗</a>
+                      </div>
+                    )}
+                    {c.instagram_url && (
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Instagram</span>
+                        <a href={c.instagram_url} target="_blank" rel="noreferrer" className="mono" style={{ fontSize: 11, color: "var(--text-secondary)", textDecoration: "none" }}>View ↗</a>
                       </div>
                     )}
                   </div>

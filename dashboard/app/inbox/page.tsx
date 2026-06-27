@@ -196,6 +196,20 @@ export default function Inbox() {
                   {contacts[0].email}
                 </div>
               )}
+              {contacts[0]?.instagram_url && (
+                <a href={contacts[0].instagram_url} target="_blank" rel="noreferrer" style={{
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  padding: '6px 12px',
+                  fontSize: 11, color: 'var(--text-secondary)',
+                  fontFamily: 'Inter, sans-serif',
+                  textDecoration: 'none',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}>
+                  📸 Insta ↗
+                </a>
+              )}
               {/* Score badge */}
               <div style={{
                 background: 'var(--bg-elevated)',
