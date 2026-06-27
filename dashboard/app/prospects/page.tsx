@@ -61,17 +61,11 @@ export default function ProspectsPage() {
   const deleteCompany = async () => {
     if (!selected) return;
     setDeleting(true);
-    await supabase.from("companies").update({ status: 'REJECTED' }).eq("id", selected.id);
-    // Add rejection reason
-    const { data: audit } = await supabase.from("audits").select("id").eq("company_id", selected.id).single();
-    if (audit) {
-      await supabase.from("audit_results").insert({
-        audit_id: audit.id,
-        category: 'REJECTED',
-        raw_data: {},
-        issues_found: { rejection_reason: "Manually deleted/rejected" }
-      });
-    }
+    await fetch('/api/reject', {
+      method: 'POST',
+      body: JSON.stringify({ id: selected.id }),
+      headers: { 'Content-Type': 'application/json' }
+    });
     setCompanies(prev => prev.map(c => c.id === selected.id ? { ...c, status: 'REJECTED' } : c));
     setSelected(null);
     setDeleting(false);
