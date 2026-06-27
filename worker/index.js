@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { Groq } from 'groq-sdk';
 import puppeteer from 'puppeteer';
 import dotenv from 'dotenv';
 import ws from 'ws';
@@ -9,12 +9,12 @@ dotenv.config();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
   realtime: { transport: ws }
 });
-const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 let engineRunning = false;
 let jobProcessing = false;
 const jobQueue = [];
-const JOB_DELAY_MS = 13000; // 13s between jobs = ~4.6 calls/min (safe under free tier 5 RPM)
+const JOB_DELAY_MS = 2100; // 2.1s between jobs = ~28 calls/min (safe under Groq free tier 30 RPM)
 
 console.log('Worker started. Connecting to Supabase...');
 
@@ -158,7 +158,7 @@ async function handleDiscover(job) {
 
 async function handleScrape(job) {
   const { auditData, contacts } = await runAudit(job.payload.target);
-  const aiAnalysis = await analyzeWithGemini(auditData);
+  const aiAnalysis = await analyzeWithGroq(auditData);
 
   const { data: company } = await supabase.from('companies').insert({
     name: aiAnalysis.companyName || job.payload.target,
@@ -335,10 +335,10 @@ async function extractContacts(page) {
   });
 }
 
-// ─── Gemini Analysis ──────────────────────────────────────────────────────────
+// ─── Groq Analysis ──────────────────────────────────────────────────────────
 
-async function analyzeWithGemini(auditData) {
-  console.log('Analyzing with Gemini...');
+async function analyzeWithGroq(auditData) {
+  console.log('Analyzing with Groq (Llama 3)...');
   const issuesSummary = auditData.issues?.map(i => `[${i.severity.toUpperCase()}] ${i.category}: ${i.issue}`).join('\n') || 'None';
 
   const prompt = `
@@ -359,30 +359,35 @@ async function analyzeWithGemini(auditData) {
   3. "leadScore": 1-100, lower = worse site = hotter lead
   4. "pitch": cold email max 180 words. Reference 2-3 specific issues. Sign off as "Kenz". No "I noticed your website" or "I hope this finds you well".
   
-  Respond ONLY with valid JSON. No markdown.
+  Respond ONLY with valid JSON. No markdown formatting blocks around it. Just the raw JSON object.
   `;
 
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
+  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+  
   for (const modelName of models) {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const model = ai.getGenerativeModel({ model: modelName });
-        const response = await model.generateContent(prompt);
-        const text = response.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        const completion = await groq.chat.completions.create({
+          messages: [{ role: 'user', content: prompt }],
+          model: modelName,
+          response_format: { type: 'json_object' }
+        });
+        
+        const text = completion.choices[0]?.message?.content || '{}';
         return JSON.parse(text);
       } catch (e) {
         const isRetryable = e.message?.includes('503') || e.message?.includes('429') ||
-          e.message?.includes('overloaded') || e.message?.includes('high demand') ||
           e.message?.includes('rate limit') || e.message?.includes('quota');
+        
         if (isRetryable && attempt < 3) {
-          const wait = e.message?.includes('429') ? attempt * 10000 : attempt * 4000;
-          console.log(`${modelName} throttled (${e.message?.includes('429') ? '429' : '503'}). Waiting ${wait/1000}s...`);
+          const wait = e.message?.includes('429') ? attempt * 5000 : attempt * 2000;
+          console.log(`${modelName} throttled. Waiting ${wait/1000}s...`);
           await new Promise(r => setTimeout(r, wait));
         } else if (isRetryable) {
           console.log(`${modelName} exhausted. Trying next model...`);
           break;
         } else {
-          console.error(`Gemini error:`, e.message);
+          console.error(`Groq error:`, e.message);
           return { companyName: auditData.url, pitch: 'AI analysis failed.', leadScore: 50 };
         }
       }
