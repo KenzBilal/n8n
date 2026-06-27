@@ -12,6 +12,9 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 let engineRunning = false;
+let jobProcessing = false;
+const jobQueue = [];
+const JOB_DELAY_MS = 13000; // 13s between jobs = ~4.6 calls/min (safe under free tier 5 RPM)
 
 console.log('Worker started. Connecting to Supabase...');
 
@@ -27,7 +30,8 @@ supabase
   .channel('jobs-channel')
   .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'jobs' }, (payload) => {
     if (!engineRunning) { console.log('Job received but engine IDLE. Skipping.'); return; }
-    handleJob(payload.new);
+    jobQueue.push(payload.new);
+    processQueue();
   })
   .subscribe(async () => {
     const { data } = await supabase.from('engine_control').select('is_running').eq('id', 1).single();
@@ -36,6 +40,23 @@ supabase
       console.log(`Connected. Engine is ${engineRunning ? 'RUNNING' : 'IDLE'}.`);
     }
   });
+
+async function processQueue() {
+  if (jobProcessing || jobQueue.length === 0) return;
+  jobProcessing = true;
+  const job = jobQueue.shift();
+  try {
+    await handleJob(job);
+  } catch (e) {
+    console.error('Queue error:', e.message);
+  }
+  if (jobQueue.length > 0) {
+    console.log(`Queue: ${jobQueue.length} remaining. Waiting ${JOB_DELAY_MS/1000}s...`);
+    await new Promise(r => setTimeout(r, JOB_DELAY_MS));
+  }
+  jobProcessing = false;
+  processQueue();
+}
 
 // ─── Job Router ───────────────────────────────────────────────────────────────
 
@@ -350,10 +371,15 @@ async function analyzeWithGemini(auditData) {
         const text = response.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
         return JSON.parse(text);
       } catch (e) {
-        const is503 = e.message?.includes('503') || e.message?.includes('overloaded') || e.message?.includes('high demand');
-        if (is503 && attempt < 3) {
-          await new Promise(r => setTimeout(r, attempt * 4000));
-        } else if (is503) {
+        const isRetryable = e.message?.includes('503') || e.message?.includes('429') ||
+          e.message?.includes('overloaded') || e.message?.includes('high demand') ||
+          e.message?.includes('rate limit') || e.message?.includes('quota');
+        if (isRetryable && attempt < 3) {
+          const wait = e.message?.includes('429') ? attempt * 10000 : attempt * 4000;
+          console.log(`${modelName} throttled (${e.message?.includes('429') ? '429' : '503'}). Waiting ${wait/1000}s...`);
+          await new Promise(r => setTimeout(r, wait));
+        } else if (isRetryable) {
+          console.log(`${modelName} exhausted. Trying next model...`);
           break;
         } else {
           console.error(`Gemini error:`, e.message);
