@@ -80,19 +80,19 @@ async function handleJob(job) {
     const { data: audit } = await supabase.from('audits').insert({
       company_id: company.id,
       status: 'COMPLETED',
-      total_score: auditData.performanceScore
+      total_score: auditData.score
     }).select().single();
 
-    // 6. Save AI pitch
+    // 6. Save AI pitch + raw issues
     await supabase.from('audit_results').insert({
       audit_id: audit.id,
       category: 'AI_PITCH',
-      raw_data: { ...auditData, contacts },
-      issues_found: { pitch: aiAnalysis.pitch }
+      raw_data: auditData,
+      issues_found: { pitch: aiAnalysis.pitch, issues: auditData.issues }
     });
 
     await supabase.from('jobs').update({ status: 'COMPLETED', updated_at: new Date().toISOString() }).eq('id', job.id);
-    console.log(`✓ Job ${job.id} completed for ${company.name} | Contacts: ${contacts.length}`);
+    console.log(`✓ Job ${job.id} completed for ${company.name} | Score: ${auditData.score} | Issues: ${auditData.issues?.length} | Contacts: ${contacts.length}`);
   } catch (error) {
     console.error('Job failed:', error.message);
     await supabase.from('jobs').update({ status: 'FAILED', updated_at: new Date().toISOString() }).eq('id', job.id);
@@ -100,86 +100,184 @@ async function handleJob(job) {
 }
 
 async function runAudit(url) {
-  console.log(`Auditing ${url}...`);
+  console.log(`Deep auditing ${url}...`);
   if (!url.startsWith('http')) url = 'https://' + url;
 
   const browser = await puppeteer.launch({
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 
-  let performanceScore = 100;
-  let missingH1 = false;
-  let missingMeta = false;
-  let title = '';
+  const issues = [];
   let contacts = [];
+  let title = '';
+  let loadTimeMs = 0;
 
   try {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36');
+
+    // Measure load time
+    const t0 = Date.now();
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    loadTimeMs = Date.now() - t0;
 
-    // Basic audit checks
-    const h1 = await page.$('h1');
-    const meta = await page.$('meta[name="description"]');
     title = await page.title();
-    if (!h1) { missingH1 = true; performanceScore -= 20; }
-    if (!meta) { missingMeta = true; performanceScore -= 10; }
 
-    // Extract contacts from main page
+    // Run all checks inside browser context
+    const checks = await page.evaluate(() => {
+      const results = {};
+
+      // --- SEO ---
+      results.hasH1 = !!document.querySelector('h1');
+      results.h1Count = document.querySelectorAll('h1').length;
+      results.hasMetaDesc = !!document.querySelector('meta[name="description"]');
+      results.metaDescLength = document.querySelector('meta[name="description"]')?.content?.length || 0;
+      results.hasTitle = !!document.title;
+      results.titleLength = document.title?.length || 0;
+      results.hasCanonical = !!document.querySelector('link[rel="canonical"]');
+      results.hasOpenGraph = !!document.querySelector('meta[property^="og:"]');
+      results.hasTwitterCard = !!document.querySelector('meta[name^="twitter:"]');
+      results.hasStructuredData = !!document.querySelector('script[type="application/ld+json"]');
+      results.hasH2 = !!document.querySelector('h2');
+      results.hasH3 = !!document.querySelector('h3');
+
+      // --- Images ---
+      const imgs = [...document.querySelectorAll('img')];
+      results.totalImages = imgs.length;
+      results.imagesWithoutAlt = imgs.filter(img => !img.alt || img.alt.trim() === '').length;
+
+      // --- Performance indicators ---
+      results.hasLazyLoading = imgs.some(img => img.loading === 'lazy');
+      results.scriptCount = document.querySelectorAll('script[src]').length;
+      results.cssCount = document.querySelectorAll('link[rel="stylesheet"]').length;
+
+      // --- Analytics & Tracking ---
+      const pageText = document.documentElement.innerHTML;
+      results.hasGoogleAnalytics = pageText.includes('google-analytics.com') || pageText.includes('gtag(') || pageText.includes('UA-') || pageText.includes('G-');
+      results.hasGTM = pageText.includes('googletagmanager.com');
+      results.hasPixel = pageText.includes('connect.facebook.net') || pageText.includes('fbq(');
+
+      // --- UX & Accessibility ---
+      results.hasViewport = !!document.querySelector('meta[name="viewport"]');
+      results.hasFavicon = !!(document.querySelector('link[rel="icon"]') || document.querySelector('link[rel="shortcut icon"]'));
+      results.hasCookieBanner = pageText.toLowerCase().includes('cookie') && (
+        !!document.querySelector('[class*="cookie"]') || !!document.querySelector('[id*="cookie"]')
+      );
+      results.hasLiveChat = pageText.includes('tawk.to') || pageText.includes('intercom') || pageText.includes('crisp.chat') || pageText.includes('freshchat');
+
+      // --- Links ---
+      const allLinks = [...document.querySelectorAll('a[href]')];
+      results.totalLinks = allLinks.length;
+      results.externalLinks = allLinks.filter(a => a.href && !a.href.startsWith(window.location.origin) && a.href.startsWith('http')).length;
+
+      // --- Social ---
+      results.hasSocialLinks = pageText.includes('facebook.com') || pageText.includes('instagram.com') || pageText.includes('twitter.com') || pageText.includes('linkedin.com');
+
+      // --- Forms ---
+      results.hasForms = !!document.querySelector('form');
+      results.hasContactForm = !!(document.querySelector('form') && (pageText.toLowerCase().includes('contact') || pageText.toLowerCase().includes('message')));
+
+      // --- Copy Quality ---
+      const bodyText = document.body.innerText || '';
+      results.wordCount = bodyText.split(/\s+/).filter(Boolean).length;
+      results.hasPhoneNumber = /(\+?\d[\d\s\-().]{7,}\d)/.test(bodyText);
+
+      return results;
+    });
+
+    // --- Score each issue ---
+    if (!checks.hasH1)             issues.push({ category: 'SEO', severity: 'high', issue: 'Missing H1 tag' });
+    if (checks.h1Count > 1)        issues.push({ category: 'SEO', severity: 'medium', issue: `Multiple H1 tags (${checks.h1Count})` });
+    if (!checks.hasMetaDesc)       issues.push({ category: 'SEO', severity: 'high', issue: 'Missing meta description' });
+    if (checks.metaDescLength > 160) issues.push({ category: 'SEO', severity: 'low', issue: `Meta description too long (${checks.metaDescLength} chars)` });
+    if (!checks.hasCanonical)      issues.push({ category: 'SEO', severity: 'medium', issue: 'Missing canonical tag' });
+    if (!checks.hasOpenGraph)      issues.push({ category: 'SEO', severity: 'medium', issue: 'No Open Graph tags (bad social sharing)' });
+    if (!checks.hasTwitterCard)    issues.push({ category: 'SEO', severity: 'low', issue: 'No Twitter Card meta tags' });
+    if (!checks.hasStructuredData) issues.push({ category: 'SEO', severity: 'medium', issue: 'No structured data / Schema.org markup' });
+    if (checks.titleLength > 60)   issues.push({ category: 'SEO', severity: 'low', issue: `Page title too long (${checks.titleLength} chars)` });
+    if (!checks.hasTitle)          issues.push({ category: 'SEO', severity: 'high', issue: 'Missing page title' });
+
+    if (checks.imagesWithoutAlt > 0) issues.push({ category: 'Accessibility', severity: 'medium', issue: `${checks.imagesWithoutAlt} image(s) missing alt text` });
+    if (!checks.hasViewport)       issues.push({ category: 'Mobile', severity: 'high', issue: 'Missing viewport meta tag (not mobile-friendly)' });
+
+    if (loadTimeMs > 5000)         issues.push({ category: 'Performance', severity: 'high', issue: `Slow load time: ${(loadTimeMs/1000).toFixed(1)}s` });
+    else if (loadTimeMs > 3000)    issues.push({ category: 'Performance', severity: 'medium', issue: `Load time could be faster: ${(loadTimeMs/1000).toFixed(1)}s` });
+    if (!checks.hasLazyLoading && checks.totalImages > 3) issues.push({ category: 'Performance', severity: 'low', issue: 'Images not lazy loaded' });
+    if (checks.scriptCount > 10)   issues.push({ category: 'Performance', severity: 'medium', issue: `Many external scripts (${checks.scriptCount}) — may slow page` });
+
+    if (!checks.hasGoogleAnalytics && !checks.hasGTM) issues.push({ category: 'Analytics', severity: 'high', issue: 'No analytics tracking detected' });
+    if (!checks.hasFavicon)        issues.push({ category: 'Branding', severity: 'low', issue: 'No favicon' });
+    if (!checks.hasSocialLinks)    issues.push({ category: 'Social', severity: 'low', issue: 'No social media links found' });
+    if (!checks.hasForms)          issues.push({ category: 'Conversion', severity: 'medium', issue: 'No forms found — no lead capture' });
+    if (!checks.hasPhoneNumber)    issues.push({ category: 'Contact', severity: 'low', issue: 'No phone number visible on page' });
+    if (!url.includes('https'))    issues.push({ category: 'Security', severity: 'high', issue: 'No HTTPS / SSL certificate' });
+    if (checks.wordCount < 300)    issues.push({ category: 'Content', severity: 'medium', issue: `Thin content — only ${checks.wordCount} words on page` });
+
+    // Penalty scoring
+    const penalties = { high: 15, medium: 7, low: 3 };
+    let score = 100;
+    for (const i of issues) score -= (penalties[i.severity] || 0);
+    score = Math.max(score, 0);
+
+    console.log(`Audit done: ${issues.length} issues found, score: ${score}`);
+
+    // Extract contacts
     const mainContacts = await extractContacts(page);
     contacts.push(...mainContacts);
 
-    // Try contact page
     const contactLinks = await page.$$eval('a', links =>
       links
         .map(a => ({ href: a.href, text: a.textContent?.toLowerCase().trim() }))
         .filter(a => a.href && (a.text?.includes('contact') || a.text?.includes('about') || a.text?.includes('team')))
-        .slice(0, 2)
-        .map(a => a.href)
+        .slice(0, 2).map(a => a.href)
     );
 
     for (const contactUrl of contactLinks) {
       try {
-        const contactPage = await browser.newPage();
-        await contactPage.goto(contactUrl, { waitUntil: 'networkidle2', timeout: 15000 });
-        const pageContacts = await extractContacts(contactPage);
-        contacts.push(...pageContacts);
-        await contactPage.close();
-      } catch (e) {
-        // silently skip failed contact pages
-      }
+        const cp = await browser.newPage();
+        await cp.goto(contactUrl, { waitUntil: 'networkidle2', timeout: 15000 });
+        contacts.push(...await extractContacts(cp));
+        await cp.close();
+      } catch (e) { /* skip */ }
     }
 
     await page.close();
+
+    // Deduplicate contacts
+    const seen = new Set();
+    contacts = contacts.filter(c => {
+      const key = c.email || c.linkedin;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    console.log(`Found ${contacts.length} contact(s)`);
+
+    return {
+      auditData: {
+        url, title, score, loadTimeMs,
+        ssl: url.includes('https'),
+        issues,
+        summary: {
+          totalIssues: issues.length,
+          highPriority: issues.filter(i => i.severity === 'high').length,
+          mediumPriority: issues.filter(i => i.severity === 'medium').length,
+          lowPriority: issues.filter(i => i.severity === 'low').length,
+          ...checks,
+        }
+      },
+      contacts,
+    };
+
   } catch (e) {
-    console.error('Puppeteer error:', e.message);
-    performanceScore = 10;
+    console.error('Audit failed:', e.message);
+    await browser.close();
+    return {
+      auditData: { url, title, score: 10, loadTimeMs: 0, ssl: false, issues: [{ category: 'General', severity: 'high', issue: 'Site unreachable or timed out' }], summary: {} },
+      contacts: [],
+    };
   }
-
-  await browser.close();
-
-  // Deduplicate contacts by email
-  const seen = new Set();
-  contacts = contacts.filter(c => {
-    const key = c.email || c.linkedin;
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  console.log(`Found ${contacts.length} unique contacts`);
-
-  return {
-    auditData: {
-      url,
-      title,
-      performanceScore: Math.max(performanceScore, 0),
-      missingH1,
-      missingMeta,
-      ssl: url.includes('https'),
-    },
-    contacts,
-  };
 }
 
 async function extractContacts(page) {
@@ -226,16 +324,30 @@ async function extractContacts(page) {
 
 async function analyzeWithGemini(auditData) {
   console.log('Analyzing with Gemini...');
+  const issuesSummary = auditData.issues?.map(i => `[${i.severity.toUpperCase()}] ${i.category}: ${i.issue}`).join('\n') || 'No issues found';
   const prompt = `
-  You are an expert web agency consultant. Analyze this website audit data:
-  ${JSON.stringify(auditData)}
-
+  You are a sharp, senior web agency consultant who closes clients by being brutally specific.
+  
+  Website: ${auditData.url}
+  Page Title: "${auditData.title}"
+  Score: ${auditData.score}/100
+  Load Time: ${(auditData.loadTimeMs/1000).toFixed(1)}s
+  SSL: ${auditData.ssl ? 'Yes' : 'NO — CRITICAL'}
+  
+  Issues found (${auditData.issues?.length || 0} total):
+  ${issuesSummary}
+  
   Return a JSON object with:
-  1. "companyName": Inferred company name from URL or title.
-  2. "industry": Inferred industry.
-  3. "leadScore": 1-100 score (lower = more problems = higher priority lead).
-  4. "pitch": A sharp, professional outreach email (max 150 words) identifying specific problems and offering help. No fluff.
-
+  1. "companyName": Inferred company name from URL/title.
+  2. "industry": Inferred industry (be specific, e.g. "Plumbing Services" not just "Services").
+  3. "leadScore": 1-100. Use their site score as a baseline. Lower score = worse site = hotter lead for us.
+  4. "pitch": Write a cold outreach email (max 180 words). Rules:
+     - Reference 2-3 SPECIFIC issues by name (e.g. "your site has no meta description", "images are missing alt text")
+     - Sound like a human, not a robot
+     - One clear call to action at the end
+     - Do NOT use phrases like "I noticed your website" or "I hope this email finds you well"
+     - Sign off as "Kenz"
+  
   Respond ONLY with valid JSON. No markdown.
   `;
 
