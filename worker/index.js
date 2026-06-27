@@ -21,8 +21,10 @@ console.log('Worker started. Connecting to Supabase...');
 supabase
   .channel('engine-control-channel')
   .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'engine_control' }, (payload) => {
+    const wasRunning = engineRunning;
     engineRunning = payload.new.is_running;
     console.log(`Engine: ${engineRunning ? 'RUNNING' : 'IDLE'}`);
+    if (!wasRunning && engineRunning) fetchPendingJobs();
   })
   .subscribe();
 
@@ -38,8 +40,21 @@ supabase
     if (data) {
       engineRunning = data.is_running;
       console.log(`Connected. Engine is ${engineRunning ? 'RUNNING' : 'IDLE'}.`);
+      if (engineRunning) fetchPendingJobs();
     }
   });
+
+async function fetchPendingJobs() {
+  if (!engineRunning) return;
+  const { data } = await supabase.from('jobs').select('*').eq('status', 'PENDING').order('created_at', { ascending: true });
+  if (data && data.length > 0) {
+    console.log(`Found ${data.length} pending jobs. Adding to queue.`);
+    for (const job of data) {
+      if (!jobQueue.find(j => j.id === job.id)) jobQueue.push(job);
+    }
+    processQueue();
+  }
+}
 
 async function processQueue() {
   if (jobProcessing || jobQueue.length === 0) return;
