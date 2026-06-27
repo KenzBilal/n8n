@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import Nav from "./nav";
 
 export const metadata: Metadata = {
-  title: "n8n | Agency OS",
-  description: "Lead generation and audit engine",
+  title: "Webcord | Growth Engine",
+  description: "Webcord lead generation and audit engine",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

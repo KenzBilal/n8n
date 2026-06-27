@@ -24,7 +24,7 @@ export default function Nav() {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-logo">n8n Engine</div>
+      <div className="sidebar-logo">Webcord</div>
 
       <div className="sidebar-label">Main</div>
       {mainLinks.map(l => (

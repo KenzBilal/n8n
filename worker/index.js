@@ -179,6 +179,33 @@ async function handleDiscover(job) {
 
 async function handleScrape(job) {
   const { auditData, contacts } = await runAudit(job.payload.target);
+
+  if (!contacts || contacts.length === 0 || !contacts[0].email) {
+    const { data: company } = await supabase.from('companies').insert({
+      name: job.payload.target,
+      website_url: job.payload.target,
+      industry: 'Unknown',
+      lead_score: auditData.score,
+      status: 'REJECTED',
+    }).select().single();
+
+    const { data: audit } = await supabase.from('audits').insert({
+      company_id: company.id,
+      status: 'COMPLETED',
+      total_score: auditData.score
+    }).select().single();
+
+    await supabase.from('audit_results').insert({
+      audit_id: audit.id,
+      category: 'REJECTED',
+      raw_data: auditData,
+      issues_found: { rejection_reason: "No contact email found", issues: auditData.issues }
+    });
+
+    console.log(`✗ ${job.payload.target} | REJECTED: No contact email found.`);
+    return;
+  }
+
   const aiAnalysis = await analyzeWithCohere(auditData);
 
   const { data: company } = await supabase.from('companies').insert({
@@ -216,7 +243,7 @@ async function handleScrape(job) {
   console.log(`✓ ${company.name} | Score: ${auditData.score} | Issues: ${auditData.issues?.length} | Contacts: ${contacts.length}`);
 
   // ─── Auto-Send Logic ────────────────────────────────────────────────────────
-  if (auditData.score < 50 && contacts.length > 0 && contacts[0].email) {
+  if (auditData.score < 30 && contacts.length > 0 && contacts[0].email) {
     const targetEmail = contacts[0].email;
     const { count } = await supabase.from('emails')
       .select('*', { count: 'exact', head: true })
@@ -224,10 +251,10 @@ async function handleScrape(job) {
       .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
     
     if (count < 90) {
-      console.log(`Score is < 50. Auto-sending pitch to ${targetEmail} via Resend...`);
+      console.log(`Score is < 30. Auto-sending pitch to ${targetEmail} via Resend...`);
       try {
         const { data, error } = await resend.emails.send({
-          from: 'Kenz <hello@webcord.in>',
+          from: 'Webcord <hello@webcord.in>',
           to: targetEmail,
           subject: 'Quick question about your website',
           html: aiAnalysis.pitch.replace(/\n/g, '<br>')
@@ -258,10 +285,12 @@ async function handleProcessReply(job) {
   console.log(`Processing reply for company ${company_id}...`);
   
   const prompt = `
-  You are an expert sales closer. A potential client just replied to our cold email.
-  Read their reply and write a highly professional, persuasive response.
-  If they ask questions, answer them confidently. If they want to meet, suggest a time.
-  Keep it concise, polite, and persuasive.
+  You are a professional sales closer representing Webcord, a web performance and digital growth agency.
+  A potential client just replied to our cold outreach email.
+  Read their reply and write a highly professional, persuasive response on behalf of Webcord.
+  If they ask questions, answer them confidently in context of Webcord's services (web audits, performance, design, SEO).
+  If they want to meet, suggest scheduling a quick call.
+  Keep it concise, polite, and persuasive. Sign off as "Webcord Team".
   
   Client Reply:
   "${body_text}"
@@ -447,7 +476,7 @@ async function analyzeWithCohere(auditData) {
   1. "companyName": name from URL/title
   2. "industry": specific industry (e.g. "Plumbing Services" not "Services")
   3. "leadScore": 1-100, lower = worse site = hotter lead
-  4. "pitch": cold email max 180 words. Reference 2-3 specific issues. Sign off as "Kenz". No "I noticed your website" or "I hope this finds you well".
+  4. "pitch": cold email max 180 words. You represent Webcord, a web performance and digital growth agency. Reference 2-3 specific issues found on their site. Sign off as "Webcord Team". No "I noticed your website" or "I hope this finds you well". Sound professional, direct, and confident.
   `;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
