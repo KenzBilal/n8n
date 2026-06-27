@@ -1,35 +1,35 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-
-const inter = Inter({ subsets: ["latin"] });
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Agency OS | n8n",
-  description: "Professional Lead Generation Engine",
+  title: "n8n | Agency OS",
+  description: "Lead generation and audit engine",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} min-h-screen flex flex-col`}>
-        <div className="flex flex-1">
-          <aside className="w-64 border-r border-[var(--border)] p-4 flex flex-col gap-4">
-            <h1 className="font-bold text-xl tracking-tight">n8n Engine</h1>
-            <nav className="flex flex-col gap-2 mt-8">
-              <a href="#" className="px-3 py-2 bg-[var(--muted)] rounded-md font-medium text-sm">Overview</a>
-              <a href="#" className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-white transition-colors">Prospects</a>
-              <a href="#" className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-white transition-colors">Audits</a>
-            </nav>
-          </aside>
-          <main className="flex-1 p-8 overflow-y-auto">
-            {children}
-          </main>
-        </div>
+      <body>
+        <aside className="sidebar">
+          <div className="sidebar-logo">n8n Engine</div>
+
+          <div className="sidebar-label">Main</div>
+          <Link href="/" className="sidebar-link active">Overview</Link>
+          <Link href="/prospects" className="sidebar-link">Prospects</Link>
+          <Link href="/audits" className="sidebar-link">Audits</Link>
+
+          <div className="sidebar-label">Output</div>
+          <Link href="/pitches" className="sidebar-link">Pitches</Link>
+
+          <div style={{ marginTop: 'auto', paddingTop: 24 }}>
+            <Link href="/settings" className="sidebar-link">Settings</Link>
+          </div>
+        </aside>
+
+        <main className="main-content">
+          {children}
+        </main>
       </body>
     </html>
   );
