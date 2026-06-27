@@ -3,13 +3,13 @@ import { createClient } from '@supabase/supabase-js';
 import { Webhook } from 'svix';
 import { headers } from 'next/headers';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function POST(req: Request) {
   try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co',
+      process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy_key'
+    );
+    
     const payloadString = await req.text();
     const headerPayload = await headers();
     const svix_id = headerPayload.get("svix-id");
