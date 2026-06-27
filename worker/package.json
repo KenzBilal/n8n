@@ -1,0 +1,16 @@
+{
+  "name": "n8n-worker",
+  "version": "1.0.0",
+  "description": "Headless scraping and AI auditing worker",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.42.0",
+    "puppeteer": "^22.6.0",
+    "dotenv": "^16.4.5",
+    "@google/genai": "^0.1.2"
+  }
+}
