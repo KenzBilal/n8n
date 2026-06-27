@@ -1,12 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import puppeteer from 'puppeteer';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 console.log('Engine started. Listening for jobs...');
 
@@ -98,13 +98,11 @@ async function analyzeWithGemini(auditData) {
   Respond ONLY with valid JSON.
   `;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: prompt,
-  });
+  const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const response = await model.generateContent(prompt);
 
   try {
-    const text = response.text().replace(/```json/g, '').replace(/```/g, '');
+    const text = response.response.text().replace(/```json/g, '').replace(/```/g, '');
     return JSON.parse(text);
   } catch (e) {
     console.error('Failed to parse Gemini response');
