@@ -8,9 +8,10 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
     "@supabase/supabase-js": "^2.42.0",
-    "puppeteer": "^22.6.0",
     "dotenv": "^16.4.5",
-    "@google/generative-ai": "^0.21.0"
+    "puppeteer": "^22.6.0",
+    "ws": "^8.21.0"
   }
 }

@@ -2,10 +2,13 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import puppeteer from 'puppeteer';
 import dotenv from 'dotenv';
+import ws from 'ws';
 
 dotenv.config();
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  realtime: { transport: ws }
+});
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 console.log('Engine started. Listening for jobs...');
