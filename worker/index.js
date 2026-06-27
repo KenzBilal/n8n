@@ -631,7 +631,7 @@ async function analyzeWithCohere(auditData) {
   1. "companyName": name from URL/title
   2. "industry": specific industry (e.g. "Plumbing Services" not "Services")
   3. "leadScore": 1-100, lower = worse site = hotter lead
-  4. "pitch": cold email max 180 words. You represent Webcord, a web performance and digital growth agency. Reference their specific industry/niche and 1-2 specific technical issues. Sign off as "Webcord Team". Sound professional, direct, and confident.
+  4. "pitch": cold email max 180 words. You represent Webcord, a web performance and digital growth agency. Reference their specific industry/niche and 1-2 specific technical issues. Sign off as "Webcord Team". Sound professional, direct, and confident. IMPORTANT: Do not use exact metrics or robotic numbers like "your load time is 5.5s" or "you have 38 scripts". Use natural human language like "your site is noticeably slow" or "we noticed your images aren't optimized".
   `;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
