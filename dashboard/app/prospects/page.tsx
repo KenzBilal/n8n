@@ -2,9 +2,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
-const STATUSES = ["NEW", "PITCHED", "REJECTED"];
+const STATUSES = ["NEW", "PITCHED", "REPLIED", "REJECTED"];
 const STATUS_LABELS: Record<string, string> = {
-  NEW: "New", PITCHED: "Pitched", REJECTED: "Archived"
+  NEW: "New", PITCHED: "Pitched", REPLIED: "Replied", REJECTED: "Archived"
 };
 
 export default function ProspectsPage() {
@@ -18,7 +18,8 @@ export default function ProspectsPage() {
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
+  const [draftingWhatsApp, setDraftingWhatsApp] = useState(false);
+  
   useEffect(() => {
     fetchCompanies();
     const ch = supabase.channel("prospects-live2")
@@ -102,7 +103,7 @@ export default function ProspectsPage() {
           />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
           {STATUSES.map(status => (
             <div key={status} className="kanban-col">
               <div className="kanban-col-header">{STATUS_LABELS[status]} ({byStatus(status).length})</div>
@@ -190,9 +191,15 @@ export default function ProspectsPage() {
                       </div>
                     )}
                     {c.instagram_url && (
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: c.phone ? 6 : 0 }}>
                         <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Instagram</span>
                         <a href={c.instagram_url} target="_blank" rel="noreferrer" className="mono" style={{ fontSize: 11, color: "var(--text-secondary)", textDecoration: "none" }}>View ↗</a>
+                      </div>
+                    )}
+                    {c.phone && (
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Phone</span>
+                        <span className="mono" style={{ fontSize: 11, color: "var(--text-secondary)" }}>{c.phone}</span>
                       </div>
                     )}
                   </div>
@@ -200,6 +207,45 @@ export default function ProspectsPage() {
               </div>
             )}
           </div>
+
+          {/* Reply Actions (Only for REPLIED status) */}
+          {selected.status === 'REPLIED' && (
+            <div style={{ marginBottom: 16, padding: '12px 16px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6 }}>
+              <div className="section-heading" style={{ marginBottom: 10 }}>Auto-Draft Reply</div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                {contacts.some(c => c.phone) && (
+                  <button 
+                    disabled={draftingWhatsApp}
+                    onClick={async () => {
+                      setDraftingWhatsApp(true);
+                      const phone = contacts.find(c => c.phone)?.phone.replace(/[^0-9]/g, '');
+                      const res = await fetch('/api/draft', { method: 'POST', body: JSON.stringify({ id: selected.id, type: 'whatsapp' }) });
+                      const { draft } = await res.json();
+                      setDraftingWhatsApp(false);
+                      if (draft) window.open(\`https://wa.me/\${phone}?text=\${encodeURIComponent(draft)}\`, '_blank');
+                    }}
+                    style={{ flex: 1, background: '#166534', color: '#fff', border: 'none', padding: '8px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+                    {draftingWhatsApp ? 'Drafting...' : 'Reply via WhatsApp'}
+                  </button>
+                )}
+                {contacts.some(c => c.email) && (
+                  <button 
+                    disabled={draftingWhatsApp}
+                    onClick={async () => {
+                      setDraftingWhatsApp(true);
+                      const email = contacts.find(c => c.email)?.email;
+                      const res = await fetch('/api/draft', { method: 'POST', body: JSON.stringify({ id: selected.id, type: 'email' }) });
+                      const { draft } = await res.json();
+                      setDraftingWhatsApp(false);
+                      if (draft) window.open(\`mailto:\${email}?subject=Following up on Webcord&body=\${encodeURIComponent(draft)}\`);
+                    }}
+                    style={{ flex: 1, background: '#1e3a8a', color: '#fff', border: 'none', padding: '8px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+                    Reply via Email
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Pitch & Suggestions */}
           {(pitch || suggestions) && (

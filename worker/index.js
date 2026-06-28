@@ -223,8 +223,11 @@ async function handleDiscover(job) {
 async function handleScrape(job) {
   const { auditData, contacts } = await runAudit(job.payload.target);
 
-  if (!contacts || contacts.length === 0 || !contacts[0].email) {
-    console.log(`✗ ${job.payload.target} | SKIPPED: No contact email found.`);
+  const hasEmail = contacts && contacts.length > 0 && contacts.some(c => c.email);
+  const hasPhone = contacts && contacts.length > 0 && contacts.some(c => c.phone);
+
+  if (!hasEmail && !hasPhone) {
+    console.log(`✗ ${job.payload.target} | SKIPPED: No contact info found.`);
     return;
   }
 
@@ -583,9 +586,19 @@ async function extractContacts(page) {
       if (e) emails.add(e);
     });
 
-    // 4. tel: links for phone
-    document.querySelectorAll('a[href^="tel:"]').forEach(a => {
-      const p = a.href.replace('tel:', '').trim();
+    // 4. tel: and wa.me links for phone
+    document.querySelectorAll('a[href^="tel:"], a[href*="wa.me"], a[href*="api.whatsapp.com"]').forEach(a => {
+      let p = '';
+      if (a.href.includes('tel:')) {
+        p = a.href.replace('tel:', '').trim();
+      } else if (a.href.includes('wa.me/')) {
+        p = a.href.split('wa.me/')[1].split('?')[0].replace(/[^0-9+]/g, '');
+      } else if (a.href.includes('api.whatsapp.com/send')) {
+        try {
+          const url = new URL(a.href);
+          p = url.searchParams.get('phone') || '';
+        } catch(e) {}
+      }
       if (p) phones.add(p);
     });
 
