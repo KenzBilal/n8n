@@ -20,239 +20,255 @@ type Lead = {
   created_at: string;
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  NEEDS_APPROVAL: '#f59e0b',
-  ACTIVE: '#3b82f6',
-  PENDING: '#6b7280',
-  APPROVED: '#22c55e',
-  HUMAN_TAKEOVER: '#a855f7',
+const TAB_FILTERS: Record<string, string[]> = {
+  Leads:    ['PENDING'],
+  Active:   ['ACTIVE'],
+  Rejected: ['REJECTED', 'SKIPPED_PRIVACY'],
 };
 
 export default function TelegramPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [selected, setSelected] = useState<Lead | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('Leads');
+  const [approvalQueue, setApprovalQueue] = useState<Lead[]>([]);
+  const [approvalIdx, setApprovalIdx] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
-  const [filter, setFilter] = useState('ALL');
 
   useEffect(() => {
     fetch('/api/telegram/leads')
       .then(r => r.json())
       .then(data => {
-        setLeads(Array.isArray(data) ? data : []);
-        setLoading(false);
+        const arr = Array.isArray(data) ? data : [];
+        setLeads(arr);
+        setApprovalQueue(arr.filter((l: Lead) => l.status === 'NEEDS_APPROVAL'));
       })
-      .catch(() => setLoading(false));
+      .catch(() => {});
   }, []);
 
-  const handleAction = async (action: string) => {
-    if (!selected) return;
+  const filtered = leads.filter(l => (TAB_FILTERS[tab] || []).includes(l.status));
+  const currentApproval = approvalQueue[approvalIdx] ?? null;
+
+  const handleAction = async (action: 'approve' | 'decline') => {
+    if (!currentApproval) return;
     setActionLoading(true);
     await fetch('/api/telegram/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: selected.id, action }),
+      body: JSON.stringify({ id: currentApproval.id, action }),
     });
-    setLeads(prev => action === 'decline'
-      ? prev.filter(l => l.id !== selected.id)
-      : prev.map(l => l.id === selected.id ? {
-          ...l,
-          status: action === 'approve' ? 'APPROVED' : 'HUMAN_TAKEOVER'
-        } : l)
-    );
-    if (action === 'decline') setSelected(null);
+    setLeads(prev => prev.map(l =>
+      l.id === currentApproval.id
+        ? { ...l, status: action === 'approve' ? 'APPROVED' : 'REJECTED' }
+        : l
+    ));
+    setApprovalIdx(i => i + 1);
     setActionLoading(false);
   };
 
-  const filtered = filter === 'ALL' ? leads : leads.filter(l => l.status === filter);
-
   return (
-    <div>
-      <div style={{ marginBottom: 28 }}>
-        <h1 className="page-title">Leads</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 6 }}>
-          Contacts discovered and managed by the Webcord outreach engine
-        </p>
-      </div>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 20, height: 'calc(100vh - 96px)' }}>
 
-      {/* Filter Bar */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
-        {['ALL', 'NEEDS_APPROVAL', 'ACTIVE', 'PENDING', 'APPROVED', 'HUMAN_TAKEOVER'].map(s => {
-          const count = s === 'ALL' ? leads.length : leads.filter(l => l.status === s).length;
-          const labels: Record<string, string> = {
-            ALL: 'All', NEEDS_APPROVAL: 'Needs Approval', ACTIVE: 'Active',
-            PENDING: 'Pending', APPROVED: 'Approved', HUMAN_TAKEOVER: 'Taken Over',
-          };
-          return (
-            <button key={s} onClick={() => setFilter(s)} style={{
-              background: filter === s ? '#f0f0f0' : 'var(--bg-secondary)',
-              border: `1px solid ${filter === s ? '#f0f0f0' : 'var(--border)'}`,
-              borderRadius: 8, padding: '6px 14px', fontSize: 12,
-              color: filter === s ? '#0a0a0a' : 'var(--text-secondary)',
-              cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center',
+      {/* ── LEFT: Leads List ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden' }}>
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, padding: 4, alignSelf: 'flex-start' }}>
+          {['Leads', 'Active', 'Rejected'].map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{
+              padding: '6px 18px', borderRadius: 7, border: 'none', fontSize: 13, fontWeight: 500,
+              background: tab === t ? 'var(--bg-elevated)' : 'transparent',
+              color: tab === t ? 'var(--text-primary)' : 'var(--text-muted)',
+              cursor: 'pointer',
             }}>
-              <span>{labels[s]}</span>
+              {t}
               <span style={{
-                background: filter === s ? 'rgba(0,0,0,0.15)' : 'var(--bg-elevated)',
-                borderRadius: 10, padding: '1px 7px', fontSize: 11,
-              }}>{count}</span>
+                marginLeft: 7, fontSize: 11,
+                color: tab === t ? 'var(--text-secondary)' : 'var(--text-muted)',
+              }}>
+                {leads.filter(l => (TAB_FILTERS[t] || []).includes(l.status)).length}
+              </span>
             </button>
-          );
-        })}
-      </div>
+          ))}
+        </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '340px 1fr' : '1fr', gap: 16 }}>
-        {/* Lead List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {loading && <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20 }}>Loading leads...</div>}
-          {!loading && filtered.length === 0 && (
-            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20, textAlign: 'center' }}>
-              No leads yet. The Telegram Hunter is searching...
+        {/* Cards */}
+        <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 4 }}>
+          {filtered.length === 0 && (
+            <div style={{
+              border: '1px dashed var(--border)', borderRadius: 12, padding: '48px 24px',
+              textAlign: 'center', color: 'var(--text-muted)', fontSize: 13,
+            }}>
+              No {tab.toLowerCase()} yet
             </div>
           )}
           {filtered.map(lead => (
-            <div key={lead.id} onClick={() => setSelected(lead)} style={{
-              background: selected?.id === lead.id ? 'var(--bg-elevated)' : 'var(--bg-secondary)',
-              border: `1px solid ${selected?.id === lead.id ? '#f0f0f0' : 'var(--border)'}`,
-              borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              transition: 'all 0.15s',
+            <div key={lead.id} style={{
+              background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+              borderRadius: 12, padding: '20px 22px',
+              display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 24px',
             }}>
+              {/* Row 1 */}
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
-                  {lead.full_name || lead.username || `@user_${lead.chat_id}`}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {lead.category || 'Uncategorized'} · {lead.source_group || 'Unknown Group'}
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Name</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {lead.full_name || lead.username || '—'}
                 </div>
               </div>
-              <div style={{
-                fontSize: 10, fontWeight: 600, padding: '3px 9px', borderRadius: 6,
-                background: (STATUS_COLORS[lead.status] || '#6b7280') + '22',
-                color: STATUS_COLORS[lead.status] || '#6b7280',
-                whiteSpace: 'nowrap',
-              }}>
-                {lead.status?.replace(/_/g, ' ')}
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Business</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
+                  {lead.category || '—'}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Channel / Group</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  {lead.source_group || '—'}
+                </div>
+              </div>
+
+              {/* Row 2 */}
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Username</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                  {lead.username ? `@${lead.username}` : '—'}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Phone</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  {lead.phone || '—'}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>User ID</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                  {lead.chat_id || '—'}
+                </div>
               </div>
             </div>
           ))}
         </div>
+      </div>
 
-        {/* Detail Panel */}
-        {selected && (
-          <div style={{
-            background: 'var(--bg-secondary)', border: '1px solid var(--border)',
-            borderRadius: 12, padding: 24, display: 'flex', flexDirection: 'column', gap: 20,
-          }}>
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-                  {selected.full_name || selected.username || `@user_${selected.chat_id}`}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {selected.category} · {selected.source_group}
-                </div>
-              </div>
-              <button onClick={() => setSelected(null)} style={{
-                background: 'var(--surface-2)', border: '1px solid var(--border)',
-                borderRadius: 6, padding: '4px 10px', fontSize: 12,
-                color: 'var(--text-muted)', cursor: 'pointer',
-              }}>✕</button>
+      {/* ── RIGHT: Stats + Approval Panel ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden' }}>
+
+        {/* Stats */}
+        <div style={{
+          background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+          borderRadius: 12, padding: '20px 22px',
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16,
+        }}>
+          {[
+            { label: 'Total Leads', value: leads.length },
+            { label: 'Active Chats', value: leads.filter(l => l.status === 'ACTIVE').length },
+            { label: 'Pending Review', value: approvalQueue.length },
+            { label: 'Approved', value: leads.filter(l => l.status === 'APPROVED').length },
+          ].map(({ label, value }) => (
+            <div key={label}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 28, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>{value}</div>
             </div>
+          ))}
+        </div>
 
-            {/* AI Summary */}
-            {selected.ai_summary && (
-              <div style={{
-                background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)',
-                borderRadius: 8, padding: 14,
-              }}>
-                <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 600, marginBottom: 6 }}>AI SUMMARY</div>
-                <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.6 }}>
-                  {selected.ai_summary}
-                </div>
-              </div>
-            )}
-
-            {/* Contact Card */}
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 10 }}>CONTACT INFO</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {[
-                  { label: 'Username', value: selected.username ? `@${selected.username}` : null },
-                  { label: 'Phone', value: selected.phone },
-                  { label: 'Email', value: selected.email },
-                  { label: 'Instagram', value: selected.instagram },
-                  { label: 'Location', value: selected.location },
-                  { label: 'Website', value: selected.website },
-                ].map(({ label, value }) => value ? (
-                  <div key={label} style={{
-                    background: 'var(--bg-elevated)', borderRadius: 8, padding: '10px 12px',
-                  }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{label}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-primary)', wordBreak: 'break-all' }}>{value}</div>
-                  </div>
-                ) : null)}
-              </div>
+        {/* Approval Panel */}
+        <div style={{
+          background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+          borderRadius: 12, padding: '20px 22px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16,
+          overflow: 'hidden',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Approval Queue
             </div>
-
-            {/* Chat Transcript */}
-            {selected.chat_history && selected.chat_history.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 10 }}>CONVERSATION</div>
-                <div style={{
-                  maxHeight: 300, overflowY: 'auto',
-                  display: 'flex', flexDirection: 'column', gap: 8,
-                  padding: '4px 0',
-                }}>
-                  {selected.chat_history.map((msg, i) => (
-                    <div key={i} style={{
-                      display: 'flex', justifyContent: msg.role === 'assistant' ? 'flex-start' : 'flex-end',
-                    }}>
-                      <div style={{
-                        maxWidth: '80%', padding: '8px 12px', borderRadius: 10,
-                        background: msg.role === 'assistant' ? 'var(--bg-elevated)' : '#f0f0f0',
-                        color: msg.role === 'assistant' ? 'var(--text-primary)' : '#0a0a0a',
-                        fontSize: 12, lineHeight: 1.5,
-                      }}>
-                        {msg.content}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            {selected.status === 'NEEDS_APPROVAL' && (
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => handleAction('approve')} disabled={actionLoading} style={{
-                  flex: 1, padding: '10px 0', borderRadius: 8, border: 'none',
-                  background: '#22c55e', color: '#fff', fontWeight: 600, fontSize: 13,
-                  cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1,
-                }}>
-                  ✓ Approve
-                </button>
-                <button onClick={() => handleAction('takeover')} disabled={actionLoading} style={{
-                  flex: 1, padding: '10px 0', borderRadius: 8,
-                  border: '1px solid #a855f7', background: 'transparent',
-                  color: '#a855f7', fontWeight: 600, fontSize: 13,
-                  cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1,
-                }}>
-                  ↗ Take Over
-                </button>
-                <button onClick={() => handleAction('decline')} disabled={actionLoading} style={{
-                  flex: 1, padding: '10px 0', borderRadius: 8,
-                  border: '1px solid var(--border)', background: 'transparent',
-                  color: '#ef4444', fontWeight: 600, fontSize: 13,
-                  cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1,
-                }}>
-                  ✕ Decline
-                </button>
+            {approvalQueue.length > 0 && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {Math.min(approvalIdx + 1, approvalQueue.length)} / {approvalQueue.length}
               </div>
             )}
           </div>
-        )}
+
+          {!currentApproval ? (
+            <div style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13, gap: 8,
+            }}>
+              <div style={{ fontSize: 28 }}>✓</div>
+              <div>No pending approvals</div>
+            </div>
+          ) : (
+            <>
+              {/* Client Info */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {currentApproval.full_name || currentApproval.username || `User ${currentApproval.chat_id}`}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {[
+                    { label: 'Business', value: currentApproval.category },
+                    { label: 'Group', value: currentApproval.source_group },
+                    { label: 'Phone', value: currentApproval.phone },
+                    { label: 'Username', value: currentApproval.username ? `@${currentApproval.username}` : null },
+                  ].filter(r => r.value).map(({ label, value }) => (
+                    <div key={label} style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{label}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* AI Summary */}
+                {currentApproval.ai_summary && (
+                  <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: '12px 14px' }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>What they need</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.6 }}>
+                      {currentApproval.ai_summary}
+                    </div>
+                  </div>
+                )}
+
+                {/* Last Message */}
+                {currentApproval.chat_history?.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Last message</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: 1.5 }}>
+                      "{currentApproval.chat_history[currentApproval.chat_history.length - 1]?.content?.slice(0, 120)}..."
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: 'flex', gap: 10, marginTop: 'auto' }}>
+                <button
+                  onClick={() => handleAction('approve')}
+                  disabled={actionLoading}
+                  style={{
+                    flex: 1, padding: '12px 0', borderRadius: 8, border: 'none',
+                    background: '#f0f0f0', color: '#0a0a0a', fontWeight: 600, fontSize: 13,
+                    cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.6 : 1,
+                    fontFamily: 'Inter, sans-serif',
+                  }}
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => handleAction('decline')}
+                  disabled={actionLoading}
+                  style={{
+                    flex: 1, padding: '12px 0', borderRadius: 8,
+                    border: '1px solid var(--border)', background: 'transparent',
+                    color: '#ef4444', fontWeight: 600, fontSize: 13,
+                    cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.6 : 1,
+                    fontFamily: 'Inter, sans-serif',
+                  }}
+                >
+                  Decline
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
