@@ -38,7 +38,11 @@ export default function TelegramPage() {
   useEffect(() => {
     fetch('/api/telegram/leads')
       .then(r => r.json())
-      .then(data => { setLeads(data || []); setLoading(false); });
+      .then(data => {
+        setLeads(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   const handleAction = async (action: string) => {
@@ -104,7 +108,7 @@ export default function TelegramPage() {
           )}
           {filtered.map(lead => (
             <div key={lead.id} onClick={() => setSelected(lead)} style={{
-              background: selected?.id === lead.id ? 'var(--surface-2)' : 'var(--surface)',
+              background: selected?.id === lead.id ? 'rgba(99,102,241,0.12)' : 'var(--surface)',
               border: `1px solid ${selected?.id === lead.id ? 'var(--accent)' : 'var(--border)'}`,
               borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -120,10 +124,11 @@ export default function TelegramPage() {
               </div>
               <div style={{
                 fontSize: 10, fontWeight: 600, padding: '3px 9px', borderRadius: 6,
-                background: STATUS_COLORS[lead.status] + '20',
+                background: (STATUS_COLORS[lead.status] || '#6b7280') + '22',
                 color: STATUS_COLORS[lead.status] || '#6b7280',
+                whiteSpace: 'nowrap',
               }}>
-                {lead.status?.replace('_', ' ')}
+                {lead.status?.replace(/_/g, ' ')}
               </div>
             </div>
           ))}
