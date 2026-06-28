@@ -10,6 +10,8 @@ export default function Inbox() {
   const [drafts, setDrafts] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
   const [copied, setCopied] = useState(false);
+  const [editingDrafts, setEditingDrafts] = useState<Record<string, string>>({});
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     fetchCompanies(filterMode);
@@ -301,7 +303,8 @@ export default function Inbox() {
                           </button>
                         </div>
                         <textarea
-                          defaultValue={draft.draft_text}
+                          value={editingDrafts[draft.id] !== undefined ? editingDrafts[draft.id] : draft.draft_text}
+                          onChange={(e) => setEditingDrafts(prev => ({ ...prev, [draft.id]: e.target.value }))}
                           style={{
                             width: '100%',
                             background: 'var(--bg)',
@@ -320,8 +323,36 @@ export default function Inbox() {
                           onBlur={e => e.target.style.borderColor = 'var(--border)'}
                         />
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-                          <button className="btn-primary" style={{ fontSize: 12 }}>
-                            Send Reply
+                          <button 
+                            className="btn-primary" 
+                            style={{ fontSize: 12 }}
+                            disabled={sending}
+                            onClick={async () => {
+                              try {
+                                setSending(true);
+                                const textToSend = editingDrafts[draft.id] !== undefined ? editingDrafts[draft.id] : draft.draft_text;
+                                const res = await fetch('/api/send-reply', {
+                                  method: 'POST',
+                                  body: JSON.stringify({ company_id: selectedCompany.id, text: textToSend }),
+                                  headers: { 'Content-Type': 'application/json' }
+                                });
+                                if (!res.ok) throw new Error(await res.text());
+                                
+                                // Clean up and refresh thread
+                                setEditingDrafts(prev => {
+                                  const newState = { ...prev };
+                                  delete newState[draft.id];
+                                  return newState;
+                                });
+                                await fetchThread(selectedCompany.id);
+                              } catch (err: any) {
+                                alert("Failed to send reply: " + err.message);
+                              } finally {
+                                setSending(false);
+                              }
+                            }}
+                          >
+                            {sending ? 'Sending...' : 'Send Reply'}
                           </button>
                         </div>
                       </div>
