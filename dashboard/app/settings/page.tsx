@@ -141,7 +141,7 @@ export default function SettingsPage() {
             label="Admin approval number"
             description="Your personal Telegram number that receives deal-ready lead notifications for approval."
           >
-            <TextInput value={settings.admin_telegram_number} onChange={update('admin_telegram_number')} placeholder="+91 9876543210" />
+            <TextInput value={settings.admin_telegram_number} onChange={update('admin_telegram_number')} placeholder="9876543210" />
           </Field>
         </div>
       </section>
