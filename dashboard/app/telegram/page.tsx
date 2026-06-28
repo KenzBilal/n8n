@@ -69,27 +69,31 @@ export default function TelegramPage() {
   return (
     <div>
       <div style={{ marginBottom: 28 }}>
-        <h1 className="page-title">Telegram Engine</h1>
+        <h1 className="page-title">Leads</h1>
         <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 6 }}>
-          AI-managed Telegram leads — approve, decline, or take over manually
+          Contacts discovered and managed by the Webcord outreach engine
         </p>
       </div>
 
-      {/* Stats Bar */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+      {/* Filter Bar */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
         {['ALL', 'NEEDS_APPROVAL', 'ACTIVE', 'PENDING', 'APPROVED', 'HUMAN_TAKEOVER'].map(s => {
           const count = s === 'ALL' ? leads.length : leads.filter(l => l.status === s).length;
+          const labels: Record<string, string> = {
+            ALL: 'All', NEEDS_APPROVAL: 'Needs Approval', ACTIVE: 'Active',
+            PENDING: 'Pending', APPROVED: 'Approved', HUMAN_TAKEOVER: 'Taken Over',
+          };
           return (
             <button key={s} onClick={() => setFilter(s)} style={{
-              background: filter === s ? 'var(--accent)' : 'var(--surface)',
-              border: `1px solid ${filter === s ? 'var(--accent)' : 'var(--border)'}`,
+              background: filter === s ? '#f0f0f0' : 'var(--bg-secondary)',
+              border: `1px solid ${filter === s ? '#f0f0f0' : 'var(--border)'}`,
               borderRadius: 8, padding: '6px 14px', fontSize: 12,
-              color: filter === s ? '#fff' : 'var(--text-secondary)',
+              color: filter === s ? '#0a0a0a' : 'var(--text-secondary)',
               cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center',
             }}>
-              <span>{s === 'ALL' ? 'All' : s.replace('_', ' ')}</span>
+              <span>{labels[s]}</span>
               <span style={{
-                background: filter === s ? 'rgba(255,255,255,0.2)' : 'var(--surface-2)',
+                background: filter === s ? 'rgba(0,0,0,0.15)' : 'var(--bg-elevated)',
                 borderRadius: 10, padding: '1px 7px', fontSize: 11,
               }}>{count}</span>
             </button>
@@ -108,8 +112,8 @@ export default function TelegramPage() {
           )}
           {filtered.map(lead => (
             <div key={lead.id} onClick={() => setSelected(lead)} style={{
-              background: selected?.id === lead.id ? 'rgba(99,102,241,0.12)' : 'var(--surface)',
-              border: `1px solid ${selected?.id === lead.id ? 'var(--accent)' : 'var(--border)'}`,
+              background: selected?.id === lead.id ? 'var(--bg-elevated)' : 'var(--bg-secondary)',
+              border: `1px solid ${selected?.id === lead.id ? '#f0f0f0' : 'var(--border)'}`,
               borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               transition: 'all 0.15s',
@@ -137,7 +141,7 @@ export default function TelegramPage() {
         {/* Detail Panel */}
         {selected && (
           <div style={{
-            background: 'var(--surface)', border: '1px solid var(--border)',
+            background: 'var(--bg-secondary)', border: '1px solid var(--border)',
             borderRadius: 12, padding: 24, display: 'flex', flexDirection: 'column', gap: 20,
           }}>
             {/* Header */}
@@ -183,7 +187,7 @@ export default function TelegramPage() {
                   { label: 'Website', value: selected.website },
                 ].map(({ label, value }) => value ? (
                   <div key={label} style={{
-                    background: 'var(--surface-2)', borderRadius: 8, padding: '10px 12px',
+                    background: 'var(--bg-elevated)', borderRadius: 8, padding: '10px 12px',
                   }}>
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{label}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-primary)', wordBreak: 'break-all' }}>{value}</div>
@@ -207,8 +211,8 @@ export default function TelegramPage() {
                     }}>
                       <div style={{
                         maxWidth: '80%', padding: '8px 12px', borderRadius: 10,
-                        background: msg.role === 'assistant' ? 'var(--surface-2)' : 'var(--accent)',
-                        color: msg.role === 'assistant' ? 'var(--text-primary)' : '#fff',
+                        background: msg.role === 'assistant' ? 'var(--bg-elevated)' : '#f0f0f0',
+                        color: msg.role === 'assistant' ? 'var(--text-primary)' : '#0a0a0a',
                         fontSize: 12, lineHeight: 1.5,
                       }}>
                         {msg.content}
