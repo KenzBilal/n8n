@@ -514,7 +514,7 @@ async function runAudit(url) {
 
     const seen = new Set();
     contacts = contacts.filter(c => {
-      const key = c.email || c.linkedin;
+      const key = c.email || c.linkedin || c.phone;
       if (!key || seen.has(key)) return false;
       seen.add(key); return true;
     });
