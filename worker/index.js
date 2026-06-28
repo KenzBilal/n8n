@@ -14,6 +14,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
 const resend = new Resend(process.env.RESEND_API_KEY || 're_YBdNY2TB_Asd3bf4ZAwhYuoUKqaNg3TSH');
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+import Groq from "groq-sdk";
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 
