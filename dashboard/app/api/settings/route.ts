@@ -1,12 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_KEY!
+  );
+}
 
 export async function GET() {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('global_settings')
     .select('*');
@@ -21,6 +24,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const supabase = getSupabase();
   const body = await req.json();
   const updates = Object.entries(body);
 
