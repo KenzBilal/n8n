@@ -271,7 +271,7 @@ async function handleScrape(job) {
   console.log(`✓ ${company.name} | Score: ${auditData.score} | Issues: ${auditData.issues?.length} | Contacts: ${contacts.length}`);
 
   // ─── Auto-Send Logic ────────────────────────────────────────────────────────
-  if (auditData.score < 50 && contacts.length > 0 && contacts[0].email) {
+  if (auditData.score <= 60 && contacts.length > 0 && contacts[0].email) {
     const targetEmail = contacts[0].email;
     const { count } = await supabase.from('emails')
       .select('*', { count: 'exact', head: true })
@@ -279,7 +279,7 @@ async function handleScrape(job) {
       .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
     
     if (count < 90) {
-      console.log(`Score is < 50. Auto-sending pitch to ${targetEmail} via Resend...`);
+      console.log(`Score is <= 60. Auto-sending pitch to ${targetEmail} via Resend...`);
       try {
         const htmlTemplate = `
           <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; line-height: 1.6; color: #111;">

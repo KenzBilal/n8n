@@ -217,12 +217,18 @@ export default function ProspectsPage() {
                   <button 
                     disabled={draftingWhatsApp}
                     onClick={async () => {
-                      setDraftingWhatsApp(true);
-                      const phone = contacts.find(c => c.phone)?.phone.replace(/[^0-9]/g, '');
-                      const res = await fetch('/api/draft', { method: 'POST', body: JSON.stringify({ id: selected.id, type: 'whatsapp' }) });
-                      const { draft } = await res.json();
-                      setDraftingWhatsApp(false);
-                      if (draft) window.open(\`https://wa.me/\${phone}?text=\${encodeURIComponent(draft)}\`, '_blank');
+                      try {
+                        setDraftingWhatsApp(true);
+                        const phone = contacts.find(c => c.phone)?.phone.replace(/[^0-9]/g, '');
+                        const res = await fetch('/api/draft', { method: 'POST', body: JSON.stringify({ id: selected.id, type: 'whatsapp' }) });
+                        if (!res.ok) throw new Error(await res.text());
+                        const { draft } = await res.json();
+                        setDraftingWhatsApp(false);
+                        if (draft) window.open(`https://wa.me/${phone}?text=${encodeURIComponent(draft)}`, '_blank');
+                      } catch (err: any) {
+                        setDraftingWhatsApp(false);
+                        alert("Error drafting: " + err.message);
+                      }
                     }}
                     style={{ flex: 1, background: '#166534', color: '#fff', border: 'none', padding: '8px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
                     {draftingWhatsApp ? 'Drafting...' : 'Reply via WhatsApp'}
@@ -232,12 +238,18 @@ export default function ProspectsPage() {
                   <button 
                     disabled={draftingWhatsApp}
                     onClick={async () => {
-                      setDraftingWhatsApp(true);
-                      const email = contacts.find(c => c.email)?.email;
-                      const res = await fetch('/api/draft', { method: 'POST', body: JSON.stringify({ id: selected.id, type: 'email' }) });
-                      const { draft } = await res.json();
-                      setDraftingWhatsApp(false);
-                      if (draft) window.open(\`mailto:\${email}?subject=Following up on Webcord&body=\${encodeURIComponent(draft)}\`);
+                      try {
+                        setDraftingWhatsApp(true);
+                        const email = contacts.find(c => c.email)?.email;
+                        const res = await fetch('/api/draft', { method: 'POST', body: JSON.stringify({ id: selected.id, type: 'email' }) });
+                        if (!res.ok) throw new Error(await res.text());
+                        const { draft } = await res.json();
+                        setDraftingWhatsApp(false);
+                        if (draft) window.open(`mailto:${email}?subject=Following up on Webcord&body=${encodeURIComponent(draft)}`);
+                      } catch (err: any) {
+                        setDraftingWhatsApp(false);
+                        alert("Error drafting: " + err.message);
+                      }
                     }}
                     style={{ flex: 1, background: '#1e3a8a', color: '#fff', border: 'none', padding: '8px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
                     Reply via Email
