@@ -14,8 +14,8 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 const cohere = new CohereClient({ token: process.env.COHERE_API_KEY });
 const resend = new Resend(process.env.RESEND_API_KEY || 're_YBdNY2TB_Asd3bf4ZAwhYuoUKqaNg3TSH');
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-import Groq from "groq-sdk";
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 
 let engineRunning = false;
 let jobProcessing = false;
@@ -452,6 +452,8 @@ async function runAudit(url) {
       return r;
     });
 
+    const rawText = await page.evaluate(() => document.body?.innerText || '');
+
     if (!checks.hasH1)              issues.push({ category: 'SEO', severity: 'high', issue: 'Missing H1 tag' });
     if (checks.h1Count > 1)         issues.push({ category: 'SEO', severity: 'medium', issue: `Multiple H1 tags (${checks.h1Count})` });
     if (!checks.hasMetaDesc)        issues.push({ category: 'SEO', severity: 'high', issue: 'Missing meta description' });
@@ -521,10 +523,18 @@ async function runAudit(url) {
     else if (checks.isWordPress) techStack = 'WordPress';
     else if (checks.isJQuery) techStack = 'Legacy jQuery';
     
+    let semanticData = null;
+    try {
+        semanticData = await extractSemanticBusinessData(rawText);
+    } catch (e) {
+        console.error('Semantic extraction failed:', e.message);
+    }
+    
     const businessContext = {
         headings: checks.headings || [],
         paragraphs: checks.paragraphs || [],
-        hasPricing: checks.hasPricingSignals || false
+        hasPricing: checks.hasPricingSignals || false,
+        semantic: semanticData
     };
 
     return { auditData: { url, title, score, loadTimeMs, ssl: url.includes('https'), issues, techStack, businessContext, summary: { totalIssues: issues.length, ...checks } }, contacts };
@@ -605,6 +615,55 @@ async function extractContacts(page) {
   });
 }
 
+// ─── Semantic Extractor (OpenRouter Llama 3) ───────────────────────────────────
+
+async function extractSemanticBusinessData(rawText) {
+  const cleanText = rawText.replace(/\s+/g, ' ').trim().slice(0, 10000); 
+  const prompt = `
+  You are an expert business analyst. Read the following website text and extract exactly what this business does.
+  
+  WEBSITE TEXT:
+  """
+  ${cleanText}
+  """
+  
+  Return a JSON object with exactly these keys:
+  - "companyName": string
+  - "industry": string
+  - "primaryService": string (What they actually sell/do)
+  - "targetAudience": string (Who buys from them)
+  - "uniqueSellingProposition": string (What makes them special)
+  `;
+
+  // We are using a 100% free model from OpenRouter
+  // Since model slugs change occasionally for free models, we fetch the first available free one.
+  const modRes = await fetch('https://openrouter.ai/api/v1/models');
+  const modJson = await modRes.json();
+  const freeModels = modJson.data.filter(m => m.pricing.prompt === '0' || m.pricing.prompt === 0).map(m => m.id);
+  const modelToUse = freeModels.includes('meta-llama/llama-3-8b-instruct:free') ? 'meta-llama/llama-3-8b-instruct:free' : freeModels[0];
+
+  console.log(`Extracting semantics using ${modelToUse}...`);
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': \`Bearer \${OPENROUTER_KEY}\`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: modelToUse,
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  
+  const json = await response.json();
+  if (json.choices && json.choices.length > 0) {
+      return JSON.parse(json.choices[0].message.content);
+  }
+  throw new Error("Failed to extract semantic data");
+}
+
 // ─── Cohere Analysis ────────────────────────────────────────────────────────
 
 async function analyzeWithCohere(auditData) {
@@ -617,9 +676,12 @@ async function analyzeWithCohere(auditData) {
   Website: ${auditData.url}
   Title: "${auditData.title}"
   Tech Stack: ${auditData.techStack}
-  Business Signals: ${auditData.businessContext.hasPricing ? 'Sells products/plans' : 'Lead generation'}
-  Core Content: ${auditData.businessContext.headings.join(' | ')}
-  
+  Company Name: ${auditData.businessContext.semantic?.companyName || 'Unknown'}
+  Industry: ${auditData.businessContext.semantic?.industry || 'Unknown'}
+  Primary Service: ${auditData.businessContext.semantic?.primaryService || 'Unknown'}
+  Target Audience: ${auditData.businessContext.semantic?.targetAudience || 'Unknown'}
+  Unique Value: ${auditData.businessContext.semantic?.uniqueSellingProposition || 'Unknown'}
+  Core Content (Fallback): ${auditData.businessContext.headings.join(' | ')}
   Score: ${auditData.score}/100
   Load Time: ${(auditData.loadTimeMs / 1000).toFixed(1)}s
   SSL: ${auditData.ssl ? 'Yes' : 'NO'}
@@ -667,7 +729,8 @@ async function analyzeWithGroq(auditData) {
   You are the lead technical strategist at Webcord.
   We just audited a potential client's website: ${auditData.url}
   Tech Stack Detected: ${auditData.techStack}
-  Business Context: ${auditData.businessContext.headings.join(' | ')}
+  What they sell: ${auditData.businessContext.semantic?.primaryService || 'Unknown'}
+  Their Value Prop: ${auditData.businessContext.semantic?.uniqueSellingProposition || 'Unknown'}
   Score: ${auditData.score}/100.
   Issues found: ${auditData.issues?.map(i => i.issue).join(', ')}
   
