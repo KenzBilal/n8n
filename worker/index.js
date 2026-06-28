@@ -246,6 +246,7 @@ async function handleScrape(job) {
         email: c.email || null,
         linkedin_url: c.linkedin || null,
         instagram_url: c.instagram || null,
+        phone: c.phone || null,
         is_primary: i === 0,
       }))
     );
@@ -603,14 +604,17 @@ async function extractContacts(page) {
       }
     });
 
-    // Build contacts array — email-first
     const contacts = [];
     const emailArr = [...emails].slice(0, 5);
     const linkedinArr = [...linkedins].slice(0, 3);
     const instagramArr = [...instagrams].slice(0, 3);
+    const phoneArr = [...phones].slice(0, 3);
 
-    emailArr.forEach((email, i) => contacts.push({ email, linkedin: linkedinArr[i] || null, instagram: instagramArr[i] || null }));
-    linkedinArr.slice(emailArr.length).forEach((linkedin, i) => contacts.push({ email: null, linkedin, instagram: instagramArr[emailArr.length + i] || null }));
+    emailArr.forEach((email, i) => contacts.push({ email, linkedin: linkedinArr[i] || null, instagram: instagramArr[i] || null, phone: phoneArr[i] || null }));
+    linkedinArr.slice(emailArr.length).forEach((linkedin, i) => contacts.push({ email: null, linkedin, instagram: instagramArr[emailArr.length + i] || null, phone: phoneArr[emailArr.length + i] || null }));
+
+    // Add remaining phones if they weren't attached to an email/linkedin
+    phoneArr.slice(contacts.length).forEach(phone => contacts.push({ email: null, linkedin: null, instagram: null, phone }));
 
     return contacts.slice(0, 5);
   });
