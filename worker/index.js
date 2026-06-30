@@ -455,6 +455,18 @@ async function runAudit(url) {
         return !action || action.startsWith('http://');
       });
       
+      // Deep Extraction: Red Flags & Sales Triggers
+      r.hasBrokenLinks = Array.from(document.querySelectorAll('a')).some(a => {
+        const h = a.getAttribute('href');
+        return h === '#' || h === '' || h?.includes('javascript:void(0)');
+      });
+      const copyMatch = html.match(/(?:©|Copyright)\s*(20[0-2][0-9])/i);
+      r.hasOutdatedCopyright = copyMatch ? parseInt(copyMatch[1]) < new Date().getFullYear() : false;
+      r.hasPlaceholderText = html.toLowerCase().includes('lorem ipsum') || html.toLowerCase().includes('powered by shopify') || html.toLowerCase().includes('powered by wordpress');
+      r.isHiring = html.toLowerCase().includes('we are hiring') || html.toLowerCase().includes('careers') || html.toLowerCase().includes('open positions');
+      r.isHttpOnly = window.location.protocol === 'http:';
+      r.missingAdaLabels = Array.from(document.querySelectorAll('input, button, textarea, select')).some(el => !el.hasAttribute('aria-label') && !el.id);
+      
       return r;
     });
 
@@ -484,6 +496,12 @@ async function runAudit(url) {
     if (!checks.hasSocialLinks)     issues.push({ category: 'Social', severity: 'low', issue: 'No social media links' });
     if (!checks.hasForms)           issues.push({ category: 'Conversion', severity: 'medium', issue: 'No lead capture form' });
     if (!checks.hasPhoneNumber)     issues.push({ category: 'Contact', severity: 'low', issue: 'No phone number on page' });
+    if (checks.hasBrokenLinks)      issues.push({ category: 'UX', severity: 'high', issue: 'Broken links detected (e.g. href="#") — losing customers' });
+    if (checks.hasOutdatedCopyright) issues.push({ category: 'Trust', severity: 'medium', issue: 'Outdated copyright year — site looks abandoned' });
+    if (checks.hasPlaceholderText)  issues.push({ category: 'Brand', severity: 'high', issue: 'Placeholder or template text found ("Lorem Ipsum" / "Powered by...")' });
+    if (checks.isHiring)            issues.push({ category: 'Sales Signal', severity: 'low', issue: 'Company is hiring (Has budget for web dev/marketing)' });
+    if (checks.isHttpOnly)          issues.push({ category: 'Security', severity: 'high', issue: 'Missing SSL (HTTP) — Google flags as Not Secure' });
+    if (checks.missingAdaLabels)    issues.push({ category: 'Legal', severity: 'high', issue: 'Missing ADA compliance tags (ARIA labels) — High risk of lawsuit' });
     if (!url.includes('https'))     issues.push({ category: 'Security', severity: 'high', issue: 'No HTTPS / SSL' });
     if (checks.wordCount < 300)     issues.push({ category: 'Content', severity: 'medium', issue: `Thin content — only ${checks.wordCount} words` });
 
