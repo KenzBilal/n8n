@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   if (action === 'approve') {
     await supabase.from('telegram_leads').update({ status: 'APPROVED' }).eq('id', id);
   } else if (action === 'decline') {
-    await supabase.from('telegram_leads').delete().eq('id', id);
+    await supabase.from('telegram_leads').update({ status: 'REJECTED' }).eq('id', id);
   } else if (action === 'takeover') {
     await supabase.from('telegram_leads').update({ status: 'HUMAN_TAKEOVER' }).eq('id', id);
   }

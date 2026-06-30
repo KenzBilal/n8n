@@ -22,10 +22,13 @@ type Lead = {
 };
 
 const TAB_FILTERS: Record<string, string[]> = {
-  Leads:    ['PENDING'],
-  Active:   ['ACTIVE'],
-  Rejected: ['REJECTED', 'SKIPPED_PRIVACY'],
+  Leads:     ['PENDING'],
+  Active:    ['ACTIVE'],
+  Confirmed: ['APPROVED'],
+  Rejected:  ['REJECTED', 'SKIPPED_PRIVACY'],
 };
+
+const TABS = ['Leads', 'Active', 'Confirmed', 'Rejected'];
 
 export default function TelegramPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -34,7 +37,7 @@ export default function TelegramPage() {
   const [approvalIdx, setApprovalIdx] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
 
-  useEffect(() => {
+  const loadLeads = () => {
     fetch('/api/telegram/leads')
       .then(r => r.json())
       .then(data => {
@@ -43,7 +46,9 @@ export default function TelegramPage() {
         setApprovalQueue(arr.filter((l: Lead) => l.status === 'NEEDS_APPROVAL'));
       })
       .catch(() => {});
-  }, []);
+  };
+
+  useEffect(() => { loadLeads(); }, []);
 
   const filtered = leads.filter(l => (TAB_FILTERS[tab] || []).includes(l.status));
   const currentApproval = approvalQueue[approvalIdx] ?? null;
@@ -72,18 +77,15 @@ export default function TelegramPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden' }}>
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, padding: 4, alignSelf: 'flex-start' }}>
-          {['Leads', 'Active', 'Rejected'].map(t => (
+          {TABS.map(t => (
             <button key={t} onClick={() => setTab(t)} style={{
               padding: '6px 18px', borderRadius: 7, border: 'none', fontSize: 13, fontWeight: 500,
-              background: tab === t ? 'var(--bg-elevated)' : 'transparent',
-              color: tab === t ? 'var(--text-primary)' : 'var(--text-muted)',
+              background: tab === t ? (t === 'Confirmed' ? '#16a34a22' : t === 'Rejected' ? '#ef444422' : 'var(--bg-elevated)') : 'transparent',
+              color: tab === t ? (t === 'Confirmed' ? '#4ade80' : t === 'Rejected' ? '#ef4444' : 'var(--text-primary)') : 'var(--text-muted)',
               cursor: 'pointer',
             }}>
               {t}
-              <span style={{
-                marginLeft: 7, fontSize: 11,
-                color: tab === t ? 'var(--text-secondary)' : 'var(--text-muted)',
-              }}>
+              <span style={{ marginLeft: 7, fontSize: 11, color: 'inherit', opacity: 0.7 }}>
                 {leads.filter(l => (TAB_FILTERS[t] || []).includes(l.status)).length}
               </span>
             </button>
@@ -100,13 +102,95 @@ export default function TelegramPage() {
               No {tab.toLowerCase()} yet
             </div>
           )}
-          {filtered.map(lead => (
+
+          {/* ── Confirmed Tab: Detailed Cards ── */}
+          {tab === 'Confirmed' && filtered.map(lead => (
             <div key={lead.id} style={{
-              background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+              background: 'var(--bg-secondary)', border: '1px solid #16a34a33',
+              borderRadius: 12, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 16,
+            }}>
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {lead.full_name || lead.username || `User ${lead.chat_id}`}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#4ade80', marginTop: 3 }}>
+                    ✓ Confirmed Client
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>
+                  {lead.category || '—'}<br />
+                  <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{lead.source_group}</span>
+                </div>
+              </div>
+
+              {/* Contact Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                {[
+                  { label: 'Username', value: lead.username ? `@${lead.username}` : null },
+                  { label: 'Phone', value: lead.phone },
+                  { label: 'Email', value: lead.email },
+                  { label: 'Instagram', value: lead.instagram },
+                  { label: 'Location', value: lead.location },
+                  { label: 'Website', value: lead.website },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{label}</div>
+                    <div style={{ fontSize: 12, color: value ? 'var(--text-primary)' : 'var(--text-muted)' }}>{value || '—'}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* AI Summary */}
+              {lead.ai_summary && (
+                <div style={{ background: '#16a34a11', border: '1px solid #16a34a33', borderRadius: 8, padding: '12px 14px' }}>
+                  <div style={{ fontSize: 10, color: '#4ade80', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>What they need</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+                    {lead.ai_summary}
+                  </div>
+                </div>
+              )}
+
+              {/* Full Chat History */}
+              {lead.chat_history?.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                    Conversation ({lead.chat_history.length} messages)
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+                    {lead.chat_history.map((msg, i) => (
+                      <div key={i} style={{
+                        padding: '8px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.5,
+                        background: msg.role === 'assistant' ? 'var(--bg-elevated)' : '#16a34a11',
+                        color: 'var(--text-primary)',
+                        alignSelf: msg.role === 'assistant' ? 'flex-start' : 'flex-end',
+                        maxWidth: '85%',
+                      }}>
+                        <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 2, textTransform: 'uppercase' }}>
+                          {msg.role === 'assistant' ? 'Webcord' : 'Client'}
+                        </div>
+                        {msg.content}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Confirmed Date */}
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                Confirmed on {new Date(lead.updated_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </div>
+            </div>
+          ))}
+
+          {/* ── Other Tabs: Standard Cards ── */}
+          {tab !== 'Confirmed' && filtered.map(lead => (
+            <div key={lead.id} style={{
+              background: 'var(--bg-secondary)', border: `1px solid ${tab === 'Rejected' ? '#ef444422' : 'var(--border)'}`,
               borderRadius: 12, padding: '20px 22px',
               display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 24px',
             }}>
-              {/* Row 1 */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Name</div>
@@ -122,18 +206,12 @@ export default function TelegramPage() {
               </div>
               <div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Business</div>
-                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
-                  {lead.category || '—'}
-                </div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{lead.category || '—'}</div>
               </div>
               <div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Channel / Group</div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                  {lead.source_group || '—'}
-                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{lead.source_group || '—'}</div>
               </div>
-
-              {/* Row 2 */}
               <div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Username</div>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
@@ -142,15 +220,11 @@ export default function TelegramPage() {
               </div>
               <div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Phone</div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                  {lead.phone || '—'}
-                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{lead.phone || '—'}</div>
               </div>
               <div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>User ID</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                  {lead.chat_id || '—'}
-                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{lead.chat_id || '—'}</div>
               </div>
             </div>
           ))}
@@ -170,11 +244,11 @@ export default function TelegramPage() {
             { label: 'Total Leads', value: leads.length },
             { label: 'Active Chats', value: leads.filter(l => l.status === 'ACTIVE').length },
             { label: 'Pending Review', value: approvalQueue.length },
-            { label: 'Approved', value: leads.filter(l => l.status === 'APPROVED').length },
+            { label: 'Confirmed', value: leads.filter(l => l.status === 'APPROVED').length },
           ].map(({ label, value }) => (
             <div key={label}>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>{label}</div>
-              <div style={{ fontSize: 28, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>{value}</div>
+              <div style={{ fontSize: 28, fontWeight: 600, color: label === 'Confirmed' ? '#4ade80' : 'var(--text-primary)', letterSpacing: '-0.02em' }}>{value}</div>
             </div>
           ))}
         </div>
@@ -206,7 +280,6 @@ export default function TelegramPage() {
             </div>
           ) : (
             <>
-              {/* Client Info */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
                   {currentApproval.full_name || currentApproval.username || `User ${currentApproval.chat_id}`}
@@ -225,7 +298,6 @@ export default function TelegramPage() {
                   ))}
                 </div>
 
-                {/* AI Summary */}
                 {currentApproval.ai_summary && (
                   <div style={{ background: 'var(--bg-elevated)', borderRadius: 8, padding: '12px 14px' }}>
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>What they need</div>
@@ -235,30 +307,28 @@ export default function TelegramPage() {
                   </div>
                 )}
 
-                {/* Last Message */}
                 {currentApproval.chat_history?.length > 0 && (
                   <div>
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Last message</div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: 1.5 }}>
-                      "{currentApproval.chat_history[currentApproval.chat_history.length - 1]?.content?.slice(0, 120)}..."
+                      &ldquo;{currentApproval.chat_history[currentApproval.chat_history.length - 1]?.content?.slice(0, 120)}...&rdquo;
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Buttons */}
               <div style={{ display: 'flex', gap: 10, marginTop: 'auto' }}>
                 <button
                   onClick={() => handleAction('approve')}
                   disabled={actionLoading}
                   style={{
                     flex: 1, padding: '12px 0', borderRadius: 8, border: 'none',
-                    background: '#f0f0f0', color: '#0a0a0a', fontWeight: 600, fontSize: 13,
+                    background: '#16a34a', color: '#fff', fontWeight: 600, fontSize: 13,
                     cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.6 : 1,
                     fontFamily: 'Inter, sans-serif',
                   }}
                 >
-                  Approve
+                  Confirm
                 </button>
                 <button
                   onClick={() => handleAction('decline')}

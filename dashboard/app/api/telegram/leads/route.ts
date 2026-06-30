@@ -16,8 +16,6 @@ export async function GET() {
     const { data, error } = await supabase
       .from('telegram_leads')
       .select('*')
-      .not('status', 'eq', 'REJECTED')
-      .not('status', 'eq', 'SKIPPED_PRIVACY')
       .order('created_at', { ascending: false });
 
     if (error) return NextResponse.json({ error: error.message, code: error.code }, { status: 500 });
