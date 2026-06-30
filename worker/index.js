@@ -387,9 +387,25 @@ async function handleProcessReply(job) {
 
 // ─── Deep Audit ───────────────────────────────────────────────────────────────
 
+async function fetchLighthouseData(url) {
+  try {
+    const encoded = encodeURIComponent(url);
+    const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encoded}&strategy=mobile`;
+    const res = await fetch(api);
+    const data = await res.json();
+    const score = data.lighthouseResult?.categories?.performance?.score * 100;
+    return typeof score === 'number' && !isNaN(score) ? Math.round(score) : null;
+  } catch(e) {
+    return null;
+  }
+}
+
 async function runAudit(url) {
   console.log(`Auditing ${url}...`);
   if (!url.startsWith('http')) url = 'https://' + url;
+  
+  // Kick off Lighthouse concurrently so it adds 0 seconds to total audit time
+  const lighthousePromise = fetchLighthouseData(url);
 
   const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
   const issues = [];
@@ -521,16 +537,35 @@ async function runAudit(url) {
         .slice(0, 2).map(a => a.href)
     );
 
-    for (const cu of contactLinks) {
-      try {
-        const cp = await browser.newPage();
-        await cp.goto(cu, { waitUntil: 'networkidle2', timeout: 15000 });
-        contacts.push(...await extractContacts(cp));
-        await cp.close();
-      } catch (e) { /* skip */ }
-    }
+    await page.close(); // Close main page early to save RAM
 
-    await page.close();
+    // Concurrently open subpages to find extra contacts and founder names
+    let extraContext = '';
+    const subPagePromises = contactLinks.map(async (cu) => {
+      let cp;
+      try {
+        cp = await browser.newPage();
+        await cp.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36');
+        await cp.goto(cu, { waitUntil: 'networkidle2', timeout: 15000 });
+        
+        const extractedContacts = await extractContacts(cp);
+        const extraText = await cp.evaluate(() => (document.body?.innerText || '').substring(0, 1500));
+        
+        return { contacts: extractedContacts, text: extraText };
+      } catch (e) {
+        return null;
+      } finally {
+        if (cp) await cp.close().catch(()=>{});
+      }
+    });
+
+    const subPageResults = await Promise.allSettled(subPagePromises);
+    subPageResults.forEach(res => {
+      if (res.status === 'fulfilled' && res.value) {
+        contacts.push(...res.value.contacts);
+        extraContext += '\n' + res.value.text;
+      }
+    });
 
     const seen = new Set();
     contacts = contacts.filter(c => {
@@ -540,6 +575,13 @@ async function runAudit(url) {
     });
 
     await browser.close();
+
+    // Check Lighthouse results
+    const lighthouseScore = await lighthousePromise;
+    if (lighthouseScore !== null) {
+      if (lighthouseScore < 50) issues.push({ category: 'Performance', severity: 'high', issue: `Google officially scores this mobile site ${lighthouseScore}/100 (extremely poor)` });
+      else if (lighthouseScore < 80) issues.push({ category: 'Performance', severity: 'medium', issue: `Google officially scores this mobile site ${lighthouseScore}/100 (needs improvement)` });
+    }
     let techStack = 'Unknown/Custom';
     if (checks.isNextJs) techStack = 'Next.js (React)';
     else if (checks.isReact) techStack = 'React';
