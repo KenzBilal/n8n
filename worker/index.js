@@ -483,6 +483,9 @@ async function runAudit(url) {
       r.isHttpOnly = window.location.protocol === 'http:';
       r.missingAdaLabels = Array.from(document.querySelectorAll('input, button, textarea, select')).some(el => !el.hasAttribute('aria-label') && !el.id);
       
+      const computedFont = window.getComputedStyle(document.body).fontFamily.toLowerCase();
+      r.hasGenericFonts = computedFont.includes('times new roman') || computedFont === 'serif' || computedFont === '"times new roman", times, serif';
+      
       return r;
     });
 
@@ -518,6 +521,7 @@ async function runAudit(url) {
     if (checks.isHiring)            issues.push({ category: 'Sales Signal', severity: 'low', issue: 'Company is hiring (Has budget for web dev/marketing)' });
     if (checks.isHttpOnly)          issues.push({ category: 'Security', severity: 'high', issue: 'Missing SSL (HTTP) — Google flags as Not Secure' });
     if (checks.missingAdaLabels)    issues.push({ category: 'Legal', severity: 'high', issue: 'Missing ADA compliance tags (ARIA labels) — High risk of lawsuit' });
+    if (checks.hasGenericFonts)     issues.push({ category: 'Design', severity: 'medium', issue: 'Uses generic/default typography (Looks outdated/cheap)' });
     if (!url.includes('https'))     issues.push({ category: 'Security', severity: 'high', issue: 'No HTTPS / SSL' });
     if (checks.wordCount < 300)     issues.push({ category: 'Content', severity: 'medium', issue: `Thin content — only ${checks.wordCount} words` });
 
