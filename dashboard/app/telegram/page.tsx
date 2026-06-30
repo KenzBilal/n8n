@@ -18,6 +18,7 @@ type Lead = {
   ai_summary: string;
   pitch_sent_at: string;
   created_at: string;
+  updated_at: string;
 };
 
 const TAB_FILTERS: Record<string, string[]> = {
