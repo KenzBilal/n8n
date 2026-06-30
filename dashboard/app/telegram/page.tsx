@@ -36,6 +36,7 @@ export default function TelegramPage() {
   const [approvalQueue, setApprovalQueue] = useState<Lead[]>([]);
   const [approvalIdx, setApprovalIdx] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
+  const [animating, setAnimating] = useState<'approve' | 'decline' | null>(null);
 
   const loadLeads = () => {
     fetch('/api/telegram/leads')
@@ -56,18 +57,26 @@ export default function TelegramPage() {
   const handleAction = async (action: 'approve' | 'decline') => {
     if (!currentApproval) return;
     setActionLoading(true);
-    await fetch('/api/telegram/action', {
+    setAnimating(action);
+    
+    // Background API call
+    fetch('/api/telegram/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: currentApproval.id, action }),
     });
-    setLeads(prev => prev.map(l =>
-      l.id === currentApproval.id
-        ? { ...l, status: action === 'approve' ? 'APPROVED' : 'REJECTED' }
-        : l
-    ));
-    setApprovalIdx(i => i + 1);
-    setActionLoading(false);
+
+    // Wait for animation
+    setTimeout(() => {
+      setLeads(prev => prev.map(l =>
+        l.id === currentApproval.id
+          ? { ...l, status: action === 'approve' ? 'APPROVED' : 'REJECTED' }
+          : l
+      ));
+      setApprovalIdx(i => i + 1);
+      setAnimating(null);
+      setActionLoading(false);
+    }, 300);
   };
 
   return (
@@ -279,7 +288,12 @@ export default function TelegramPage() {
               <div>No pending approvals</div>
             </div>
           ) : (
-            <>
+            <div style={{
+              display: 'flex', flexDirection: 'column', flex: 1,
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              opacity: animating ? 0 : 1,
+              transform: animating === 'approve' ? 'translateX(20px)' : animating === 'decline' ? 'translateX(-20px)' : 'translateX(0)',
+            }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
                   {currentApproval.full_name || currentApproval.username || `User ${currentApproval.chat_id}`}
@@ -344,7 +358,7 @@ export default function TelegramPage() {
                   Decline
                 </button>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
