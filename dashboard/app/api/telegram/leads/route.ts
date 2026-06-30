@@ -3,22 +3,27 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-function getSupabase() {
-  return createClient(
-    process.env.SUPABASE_URL!,
-    (process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)!
-  );
-}
-
 export async function GET() {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('telegram_leads')
-    .select('*')
-    .not('status', 'eq', 'REJECTED')
-    .not('status', 'eq', 'SKIPPED_PRIVACY')
-    .order('created_at', { ascending: false });
+  try {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+    if (!url || !key) {
+      return NextResponse.json({ error: 'Missing env vars', url: !!url, key: !!key }, { status: 500 });
+    }
+
+    const supabase = createClient(url, key);
+    const { data, error } = await supabase
+      .from('telegram_leads')
+      .select('*')
+      .not('status', 'eq', 'REJECTED')
+      .not('status', 'eq', 'SKIPPED_PRIVACY')
+      .order('created_at', { ascending: false });
+
+    if (error) return NextResponse.json({ error: error.message, code: error.code }, { status: 500 });
+    return NextResponse.json(data ?? []);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
