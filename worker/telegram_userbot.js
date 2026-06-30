@@ -17,7 +17,7 @@ import { createClient } from '@supabase/supabase-js';
 import readline from 'readline';
 import 'dotenv/config';
 
-import { processIncomingMessage } from './telegram_agent.js';
+import { processIncomingMessage, startDripCron } from './telegram_agent.js';
 import {
   generateSearchKeywords,
   processTelegramChannel,
@@ -129,6 +129,9 @@ async function main() {
 
   const adminChatId = await getAdminChatId(client);
   const sendFn = (chatId, msg) => sendMessage(client, chatId, msg);
+
+  // ─── Start Drip Engine ────────────────────────────────────────────────────────
+  startDripCron(sendFn);
 
   // ─── Listen to Incoming DMs ───────────────────────────────────────────────────
   client.addEventHandler(async (event) => {

@@ -107,7 +107,14 @@ export default function TelegramPage() {
             }}>
               {/* Row 1 */}
               <div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Name</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Name</div>
+                  {activeTab === 'ACTIVE' && lead.updated_at && (
+                    <div style={{ fontSize: 9, background: 'var(--border)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
+                      Wait: {Math.floor((Date.now() - new Date(lead.updated_at).getTime()) / 86400000)}d
+                    </div>
+                  )}
+                </div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
                   {lead.full_name || lead.username || '—'}
                 </div>

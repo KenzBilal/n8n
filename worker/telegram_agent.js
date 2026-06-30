@@ -220,3 +220,57 @@ async function notifyAdmin(lead, summary) {
   console.log(`[AGENT] NOTIFY ADMIN (${adminNumber}):\n${summary}\n\nReply "approve" or "decline"`);
   // TODO: await sendMessageFn(adminChatId, `🔔 New Lead Ready for Approval!\n\n${summary}\n\nReply "approve" or "decline"`)
 }
+
+// ─── Automated Drip Sequence (Stateless) ──────────────────────────────────────
+export function startDripCron(sendMessageFn) {
+  console.log('[AGENT] Starting 24/7 Drip Sequence Cron (Hourly checks)...');
+  
+  setInterval(async () => {
+    try {
+      const { data: leads } = await supabase
+        .from('telegram_leads')
+        .select('*')
+        .eq('status', 'ACTIVE');
+        
+      if (!leads) return;
+      
+      for (const lead of leads) {
+        if (!lead.updated_at || !lead.chat_history || lead.chat_history.length === 0) continue;
+        
+        const lastMsg = lead.chat_history[lead.chat_history.length - 1];
+        if (lastMsg.role !== 'assistant') continue; // We owe them a reply, no drip
+        
+        const daysSinceUpdate = (Date.now() - new Date(lead.updated_at).getTime()) / 86400000;
+        const isBump = lastMsg.content.includes("just bumping this to the top");
+        
+        if (!isBump && daysSinceUpdate >= 3) {
+          // Send Day 3 Bump
+          const bumpText = "Hey, just bumping this to the top of your inbox. Let me know what you think when you have a sec.";
+          console.log(`[DRIP] Sending Day 3 bump to ${lead.chat_id}`);
+          await sendMessageFn(lead.chat_id, bumpText);
+          
+          const updatedHistory = [...lead.chat_history, { role: 'assistant', content: bumpText }];
+          await supabase.from('telegram_leads').update({
+            chat_history: updatedHistory,
+            updated_at: new Date().toISOString()
+          }).eq('id', lead.id);
+        }
+        else if (isBump && daysSinceUpdate >= 4) {
+          // Send Day 7 Breakup (4 days since bump)
+          const breakupText = "Assuming bad timing right now so closing your file. Feel free to reach out when you're ready to upgrade.";
+          console.log(`[DRIP] Sending Day 7 breakup to ${lead.chat_id}`);
+          await sendMessageFn(lead.chat_id, breakupText);
+          
+          const updatedHistory = [...lead.chat_history, { role: 'assistant', content: breakupText }];
+          await supabase.from('telegram_leads').update({
+            status: 'REJECTED',
+            chat_history: updatedHistory,
+            updated_at: new Date().toISOString()
+          }).eq('id', lead.id);
+        }
+      }
+    } catch (e) {
+      console.error('[DRIP] Error running drip check:', e.message);
+    }
+  }, 1000 * 60 * 60); // 1 hour interval
+}
