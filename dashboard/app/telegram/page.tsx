@@ -170,10 +170,15 @@ export default function TelegramPage() {
                   {initials(lead.full_name || lead.username || '?')}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                    {lead.full_name || lead.username || `User ${lead.chat_id}`}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                      {lead.full_name || lead.username || `User ${lead.chat_id}`}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#4ade80', fontFamily: 'monospace', letterSpacing: '0.05em', background: '#16a34a11', padding: '2px 6px', borderRadius: 6, border: '1px solid #16a34a22' }}>
+                      CLI-{lead.id.substring(0, 6).toUpperCase()}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                     {lead.category || 'Unknown Category'} · {lead.source_group || '—'}
                   </div>
                 </div>
