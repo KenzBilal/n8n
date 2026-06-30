@@ -426,6 +426,7 @@ async function runAudit(url) {
       const html = document.documentElement.innerHTML;
       r.hasGoogleAnalytics = html.includes('google-analytics.com') || html.includes('gtag(') || html.includes('G-');
       r.hasGTM = html.includes('googletagmanager.com');
+      r.hasFacebookPixel = html.includes('fbevents.js') || html.includes('fbq(');
       r.hasViewport = !!document.querySelector('meta[name="viewport"]');
       r.hasFavicon = !!(document.querySelector('link[rel="icon"]') || document.querySelector('link[rel="shortcut icon"]'));
       r.hasSocialLinks = html.includes('facebook.com') || html.includes('instagram.com') || html.includes('linkedin.com');
@@ -476,6 +477,7 @@ async function runAudit(url) {
     if (!checks.hasLazyLoading && checks.totalImages > 3) issues.push({ category: 'Performance', severity: 'low', issue: 'Images not lazy loaded' });
     if (checks.scriptCount > 10)    issues.push({ category: 'Performance', severity: 'medium', issue: `Heavy page — ${checks.scriptCount} external scripts` });
     if (!checks.hasGoogleAnalytics && !checks.hasGTM) issues.push({ category: 'Analytics', severity: 'high', issue: 'No analytics tracking found' });
+    if (!checks.hasFacebookPixel)   issues.push({ category: 'Marketing', severity: 'high', issue: 'No Facebook Pixel found (cannot run retargeting ads)' });
     if (!checks.hasPrivacyPolicy)   issues.push({ category: 'Security', severity: 'high', issue: 'Missing Privacy Policy link' });
     if (checks.hasUnsecureForms)    issues.push({ category: 'Security', severity: 'high', issue: 'Unsecured form submission detected' });
     if (!checks.hasFavicon)         issues.push({ category: 'Branding', severity: 'low', issue: 'No favicon' });
