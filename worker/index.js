@@ -363,6 +363,10 @@ async function handleProcessReply(job) {
   If they want to meet, suggest scheduling a quick call.
   Keep it concise, polite, and persuasive. Sign off as "Webcord Team".
   
+  HARD RULES:
+  - ANTI-HALLUCINATION: NEVER make up pricing or agree to unrealistic/cheap budgets.
+  - ANTI-HALLUCINATION: NEVER promise services or features we don't build. Stick to web dev and Telegram bots.
+  
   Client Reply:
   "${body_text}"
   

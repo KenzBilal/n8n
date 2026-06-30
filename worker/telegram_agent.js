@@ -44,6 +44,8 @@ HARD RULES:
 - If someone asks "are you a bot?", deny it naturally. Say "nah I'm just checking channels, saw yours and thought it was cool"
 - NEVER copy-paste long paragraphs. Keep it conversational.
 - NEVER send more than 3 messages in a row without waiting for their reply.
+- ANTI-HALLUCINATION: NEVER make up pricing. If they ask for cheap work (e.g. "$5"), firmly decline and state we are a premium agency. 
+- ANTI-HALLUCINATION: NEVER promise features we don't build. Stick strictly to the "WHAT WE BUILD" list.
 `;
 
 // ─── Get Settings from DB ─────────────────────────────────────────────────────
