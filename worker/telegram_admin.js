@@ -70,7 +70,7 @@ export async function initAdminRemote(client) {
         const lead = payload.new;
 
         // A. Lead needs approval -> Send to Admin Telegram
-        if (oldStatus !== 'NEEDS_APPROVAL' && newStatus === 'NEEDS_APPROVAL') {
+        if (newStatus === 'NEEDS_APPROVAL' && !lead.admin_msg_id) {
           if (!settings.admin_telegram_username) return;
           try {
             const adminMsg = `**New Approval Request**\n👤 ${lead.full_name || lead.username}\n🏢 ${lead.category || 'Unknown'}\n💬 "${lead.ai_summary || 'Needs review'}"`;
@@ -100,7 +100,7 @@ export async function initAdminRemote(client) {
         }
 
         // B. Lead was Approved (from Dashboard OR Telegram)
-        if (oldStatus !== 'APPROVED' && newStatus === 'APPROVED') {
+        if (newStatus === 'APPROVED' && lead.admin_msg_id) {
           try {
             // 1. Remove buttons from Admin chat
             if (settings.admin_telegram_username && lead.admin_msg_id) {
@@ -122,19 +122,24 @@ export async function initAdminRemote(client) {
               await client.sendMessage(settings.team_channel, { message: summary });
               console.log(`[ADMIN REMOTE] Sent team broadcast for Client ${lead.id.substring(0, 6).toUpperCase()}`);
             }
+            // 4. Clear admin_msg_id so this doesn't fire again on future DB updates
+            await supabase.from('telegram_leads').update({ admin_msg_id: null }).eq('id', lead.id);
+
           } catch (e) {
             console.error('[ADMIN REMOTE] Error processing approval:', e.message);
           }
         }
 
         // C. Lead was Rejected (from Dashboard OR Telegram)
-        if (oldStatus !== 'REJECTED' && newStatus === 'REJECTED') {
+        if (newStatus === 'REJECTED' && lead.admin_msg_id) {
           if (settings.admin_telegram_username && lead.admin_msg_id) {
             await client.editMessage(settings.admin_telegram_username, {
               message: lead.admin_msg_id,
               text: `❌ **DECLINED**\n👤 ${lead.full_name || lead.username}`,
               buttons: null
             }).catch(() => {});
+            
+            await supabase.from('telegram_leads').update({ admin_msg_id: null }).eq('id', lead.id);
           }
         }
       }
