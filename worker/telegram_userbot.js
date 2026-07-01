@@ -25,11 +25,17 @@ import {
   runCleanup,
 } from './telegram_hunter.js';
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+import { initAdminRemote } from './telegram_admin.js';
 
-// Telegram App credentials — get from https://my.telegram.org/apps
-const API_ID = parseInt(process.env.TELEGRAM_API_ID || '0');
-const API_HASH = process.env.TELEGRAM_API_HASH || '';
+import ws from 'ws';
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  realtime: { transport: ws }
+});
+
+// Telegram App credentials
+const API_ID = parseInt(process.env.TELEGRAM_API_ID || '2040');
+const API_HASH = process.env.TELEGRAM_API_HASH || 'b18441a1ff607e10a989891a5462e627';
 
 // ─── Load Session from DB ─────────────────────────────────────────────────────
 async function loadSession() {
@@ -93,8 +99,7 @@ async function main() {
   const session = new StringSession(sessionString);
 
   if (!API_ID || !API_HASH) {
-    console.error('[USERBOT] ERROR: TELEGRAM_API_ID and TELEGRAM_API_HASH not set in .env');
-    console.error('Get them from: https://my.telegram.org/apps');
+    console.error('[USERBOT] ERROR: TELEGRAM_API_ID and TELEGRAM_API_HASH missing');
     process.exit(1);
   }
 
@@ -198,9 +203,12 @@ async function main() {
 
   // Run hunt now + every 24 hours
   await runDailyHunt();
-  setInterval(runDailyHunt, 24 * 60 * 60 * 1000);
+  console.log('[USERBOT] Initializing components...');
+  startDripCron(client);
+  await initAdminRemote(client);
 
-  console.log('[USERBOT] Engine fully running. Listening for messages and hunting leads...');
+  console.log('[USERBOT] Userbot is running and listening for commands/messages.');
+  setInterval(runDailyHunt, 24 * 60 * 60 * 1000);
 }
 
 // ─── Handle Admin Approval Responses ─────────────────────────────────────────

@@ -8,7 +8,11 @@ import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
 import 'dotenv/config';
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+import ws from 'ws';
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  realtime: { transport: ws }
+});
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // ─── Sniper Keywords (triggers instant DM even if daily limit is hit) ─────────

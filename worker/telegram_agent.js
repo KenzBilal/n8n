@@ -6,7 +6,11 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import 'dotenv/config';
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+import ws from 'ws';
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  realtime: { transport: ws }
+});
 const genAI = new GoogleGenerativeAI(process.env.TELEGRAM_GEMINI_API_KEY);
 
 // ─── Company Knowledge Brain ──────────────────────────────────────────────────
